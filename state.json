@@ -5,14 +5,54 @@
       "label": "main wallet",
       "last_fill_ms": 1795450577128,
       "last_ledger_ms": 1795451510575,
-      "peak": 0,
+      "peak": 14734572.39232,
       "emptied_alerted": false
     },
     "0x89da4baec446f35a1cbe17a9d1ee5c70b05ee43f": {
       "label": "old wallet",
       "last_fill_ms": 1795451510575,
       "last_ledger_ms": 1795451510575,
-      "peak": 0,
+      "peak": 0.248992,
+      "emptied_alerted": false
+    },
+    "0x015354106478dda69c4aae3c0cf801290b738052": {
+      "label": "\u2b50 Top 1 \u00b7 BTC/ZEC short-seller",
+      "last_fill_ms": 1795453951456,
+      "last_ledger_ms": 1795453951456,
+      "peak": 7541102.8861,
+      "follow": false,
+      "emptied_alerted": false
+    },
+    "0xfce053a5e461683454bf37ad66d20344c0e3f4c0": {
+      "label": "\u2b50 Top 2 \u00b7 BTC trader",
+      "last_fill_ms": 1795453951456,
+      "last_ledger_ms": 1795453951456,
+      "peak": 5217910.281919,
+      "follow": false,
+      "emptied_alerted": false
+    },
+    "0x9c16bc8f1104e4d2f72267eb981fa12de7cc4a6f": {
+      "label": "\u2b50 Top 3 \u00b7 SOL/BTC/ETH",
+      "last_fill_ms": 1795453951456,
+      "last_ledger_ms": 1795453951456,
+      "peak": 1001448.883473,
+      "follow": false,
+      "emptied_alerted": false
+    },
+    "0xf899937184168b1d9dee75acbaa3fef0f52888db": {
+      "label": "\u2b50 Top 4 \u00b7 SOL/BTC/ETH short-seller",
+      "last_fill_ms": 1795453951456,
+      "last_ledger_ms": 1795453951456,
+      "peak": 781097.136898,
+      "follow": false,
+      "emptied_alerted": false
+    },
+    "0x15a4f009bb324a3fb9e36137136b201e3fe0dfdb": {
+      "label": "\u2b50 Top 5 \u00b7 big ETH/BTC whale",
+      "last_fill_ms": 1795453951456,
+      "last_ledger_ms": 1795453951456,
+      "peak": 30232175.300328,
+      "follow": false,
       "emptied_alerted": false
     }
   }
