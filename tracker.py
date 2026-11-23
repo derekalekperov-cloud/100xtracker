@@ -168,7 +168,7 @@ def check_trades(state):
 def daily(state):
     now = int(time.time() * 1000)
     fills = info({"type": "userFillsByTime", "user": WALLET,
-                  "startTime": now - 864e5, "aggregateByTime": True})
+                  "startTime": now - 86_400_000, "aggregateByTime": True})
     snap = snapshot()
     lines = [f"📊 <b>Daily summary</b> {datetime.now(timezone.utc):%d %b %Y}",
              f"Account value {usd(snap['acct'])} · 24h PnL {usd(snap['pnl_day'])}",
