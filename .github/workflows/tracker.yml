@@ -1,0 +1,29 @@
+name: hyper-tracker
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # check for new trades every 5 min
+    - cron: "0 8 * * *"     # daily summary 08:00 UTC = 09:00 Madrid
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: tracker
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Daily summary
+        if: github.event.schedule == '0 8 * * *'
+        run: python tracker.py --daily
+        env: { TELEGRAM_TOKEN: "${{ secrets.TELEGRAM_TOKEN }}", TELEGRAM_CHAT_ID: "${{ secrets.TELEGRAM_CHAT_ID }}" }
+      - name: Check trades
+        if: github.event.schedule != '0 8 * * *'
+        run: python tracker.py
+        env: { TELEGRAM_TOKEN: "${{ secrets.TELEGRAM_TOKEN }}", TELEGRAM_CHAT_ID: "${{ secrets.TELEGRAM_CHAT_ID }}" }
+      - name: Save state
+        run: |
+          git config user.name tracker-bot && git config user.email tracker-bot@users.noreply.github.com
+          git add state.json && git commit -m "state" -q || true
+          git push -q
