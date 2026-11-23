@@ -290,18 +290,34 @@ def daily(state):
     send("\n".join(lines))
 
 
-if __name__ == "__main__":
-    st = load_state()
+def daily_due(st):
+    """09:00 Madrid (08:00 UTC in winter; good enough year-round) and not yet sent today."""
+    now = datetime.now(timezone.utc)
+    return now.hour >= 8 and st.get("last_daily", "")[:10] != now.strftime("%Y-%m-%d")
+
+
+def run_once(st, force_daily=False):
+    global WALLET
+    do_daily = force_daily or daily_due(st)
     for addr in list(wallets(st)):
         WALLET = addr
         try:
-            if "--daily" in sys.argv:
+            check_money(st, addr)
+            check_trades(st)
+            if do_daily:
                 daily(st)
-            else:
-                check_money(st, addr)
-                check_trades(st)
         except Exception as e:  # one bad wallet shouldn't stop the others
             print(f"error on {addr}: {e!r}", file=sys.stderr)
-    if "--daily" in sys.argv:
+    if do_daily:
         st["last_daily"] = datetime.now(timezone.utc).isoformat()  # daily commit keeps the scheduled workflow active
     save_state(st)
+
+
+if __name__ == "__main__":
+    st = load_state()
+    minutes = int(sys.argv[sys.argv.index("--loop") + 1]) if "--loop" in sys.argv else 0
+    end = time.time() + minutes * 60
+    run_once(st, force_daily="--daily" in sys.argv)
+    while time.time() + 60 < end:  # keep polling every minute (GitHub's cron is often late)
+        time.sleep(60)
+        run_once(st)
