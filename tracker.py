@@ -30,7 +30,20 @@ TOP_TRADERS = {
     "0xf899937184168b1d9dee75acbaa3fef0f52888db": "Top 4 · SOL/BTC/ETH short-seller",
     "0x15a4f009bb324a3fb9e36137136b201e3fe0dfdb": "Top 5 · big ETH/BTC whale",
 }
-WALLET = None          # wallet currently being processed (set in main loop)
+# Long-history traders (consistent records over many months). Tagged 🏅.
+# "batch": very active wallets get one hourly digest instead of an alert per trade.
+PRO_TRADERS = {
+    "0x885989fd94d30c150e6eaf897090509bce4f6aa8": ("Pro A", False),
+    "0x987163b6b482c30c2f5f3aa2760109668eb0091d": ("Pro B", False),
+    "0x2312171890250347dbf1b082bdf7950504909e92": ("Pro C", False),
+    "0xf97ad6704baec104d00b88e0c157e2b7b3a1ddd1": ("Pro D · Loco (very active)", True),
+    "0x8af700ba841f30e0a3fcb0ee4c4a9d223e1efa05": ("Pro E", False),
+}
+# Your own account: set the MY_WALLET repo secret to your public address. It is stored
+# in state.json under the key "me", so the address never appears in this public repo.
+MY_KEY = "me"
+WALLET = None          # address currently being processed (set in main loop)
+KEY = None             # its key in state.json (the address, or "me")
 MIN_MOVE = 50_000      # USD; smaller transfers are ignored
 SYSTEM_PREFIX = "0x2000000000000000000000000000000000"  # HyperEVM bridge addresses
 API = "https://api.hyperliquid.xyz/info"
@@ -74,6 +87,13 @@ def wallets(state):
         if addr not in w:
             w[addr] = {"label": "⭐ " + label, "last_fill_ms": now, "last_ledger_ms": now,
                        "peak": 0, "follow": False}
+    for addr, (label, batch) in PRO_TRADERS.items():
+        if addr not in w:
+            w[addr] = {"label": "🏅 " + label, "last_fill_ms": now, "last_ledger_ms": now,
+                       "peak": 0, "follow": False, "batch": batch}
+    if os.environ.get("MY_WALLET") and MY_KEY not in w:
+        w[MY_KEY] = {"label": "👤 You", "last_fill_ms": now, "last_ledger_ms": now,
+                     "peak": 0, "follow": False}
     main = w["0xe81309ec9b79309e4d108ae3a92d1aa618cd6d74"]
     if "last_fill_ms" in state:  # from the first version
         main["last_fill_ms"] = state.pop("last_fill_ms")
@@ -87,7 +107,7 @@ def short(a):
 def check_money(state, w):
     """Alert on money moving in/out, liquidations, and the account being emptied."""
     me = WALLET
-    ws = state["wallets"][me]
+    ws = state["wallets"][KEY]
     ups = info({"type": "userNonFundingLedgerUpdates", "user": me,
                 "startTime": ws["last_ledger_ms"] + 1})
     tag = f"[{ws['label']} {short(me)}]"
@@ -243,16 +263,30 @@ def describe(d, coin, v, snap):
 
 
 def check_trades(state):
+    ws = state["wallets"][KEY]
+    if ws.get("batch") and time.time() - ws.get("last_batch", 0) < 3600:
+        return  # busy wallet: checked once an hour, sent as one digest
     fills = info({"type": "userFillsByTime", "user": WALLET,
-                  "startTime": state["wallets"][WALLET]["last_fill_ms"] + 1, "aggregateByTime": True})
+                  "startTime": ws["last_fill_ms"] + 1, "aggregateByTime": True})
+    ws["last_batch"] = time.time()
     if not fills:
         return
     snap = snapshot()
+    if ws.get("batch"):
+        lines = [f"🗂 <b>Hourly digest</b> [{ws['label']} {short(WALLET)}]: {len(fills)} fills"]
+        for (coin, d), v in sorted(group(fills).items(), key=lambda kv: kv[1]["t"]):
+            icon, head, _ = describe(d, coin, v, snap)
+            lines.append(f"{icon} {head}: {usd(v['ntl'])} @ {px(v['ntl']/v['sz'])}"
+                         + (f", PnL {usd(v['pnl'])}" if "Close" in d or ">" in d else ""))
+        lines += ["", f"Account {usd(snap['acct'])} · 30d {usd(snap['pnl_month'])} · all-time {usd(snap['pnl_all'])}"]
+        send("\n".join(lines))
+        ws["last_fill_ms"] = max(f["time"] for f in fills)
+        return
     for (coin, d), v in sorted(group(fills).items(), key=lambda kv: kv[1]["t"]):
         icon, head, meaning = describe(d, coin, v, snap)
         verdict, flags = risk_read(snap, coin)
         szs = f"{v['sz']:,.0f}" if v['sz'] >= 100 else f"{v['sz']:,.4f}"
-        lbl = state["wallets"][WALLET]["label"]
+        lbl = state["wallets"][KEY]["label"]
         lines = [f"{icon} <b>{head}</b>  [{lbl} {short(WALLET)}]", f"<i>{meaning}</i>",
                  f"Size {szs} {coin} ≈ {usd(v['ntl'])} @ avg {px(v['ntl']/v['sz'])}"]
         if "Close" in d or ">" in d:
@@ -261,7 +295,7 @@ def check_trades(state):
         lines += ["", "<i>Informational only, not financial advice.</i>",
                   f"https://hypurrscan.io/address/{WALLET}"]
         send("\n".join(lines))
-    state["wallets"][WALLET]["last_fill_ms"] = max(f["time"] for f in fills)
+    state["wallets"][KEY]["last_fill_ms"] = max(f["time"] for f in fills)
 
 
 def daily(state):
@@ -271,7 +305,7 @@ def daily(state):
     snap = snapshot()
     if snap["acct"] < 1 and not fills:
         return
-    lines = [f"📊 <b>Daily summary</b> {datetime.now(timezone.utc):%d %b %Y} [{state['wallets'][WALLET]['label']} {short(WALLET)}]",
+    lines = [f"📊 <b>Daily summary</b> {datetime.now(timezone.utc):%d %b %Y} [{state['wallets'][KEY]['label']} {short(WALLET)}]",
              f"Account value {usd(snap['acct'])} · 24h PnL {usd(snap['pnl_day'])}",
              f"7d {usd(snap['pnl_week'])} · 30d {usd(snap['pnl_month'])} · all-time {usd(snap['pnl_all'])}",
              "", "<b>Trades (24h)</b>"]
@@ -288,6 +322,64 @@ def daily(state):
     if not snap["positions"]:
         lines.append("• None")
     send("\n".join(lines))
+
+
+def weekly(state):
+    """One report across every tracked wallet: value, PnL, activity, open positions."""
+    now = int(time.time() * 1000)
+    rows, total_pnl_w = [], 0.0
+    for key, ws in list(state["wallets"].items()):
+        addr = os.environ.get("MY_WALLET", "").strip().lower() if key == MY_KEY else key
+        if not addr:
+            continue
+        global WALLET, KEY
+        WALLET, KEY = addr, key
+        try:
+            snap = snapshot()
+            fills = info({"type": "userFillsByTime", "user": addr,
+                          "startTime": now - 7 * 86_400_000, "aggregateByTime": True})
+        except Exception as e:
+            print(f"weekly error on {key[:10]}: {e!r}", file=sys.stderr)
+            continue
+        if snap["acct"] < 1 and not fills:
+            continue
+        g = group(fills)
+        realized = sum(v["pnl"] for v in g.values())
+        best = max(g.items(), key=lambda kv: kv[1]["pnl"], default=None)
+        worst = min(g.items(), key=lambda kv: kv[1]["pnl"], default=None)
+        pos = sorted(snap["positions"], key=lambda p: -abs(float(p["positionValue"])))
+        lines = [f"<b>{ws['label']}</b> {short(addr) if key != MY_KEY else ''}",
+                 f"Value {usd(snap['acct'])} · 7d {usd(snap['pnl_week'])} · 30d {usd(snap['pnl_month'])} · all-time {usd(snap['pnl_all'])}",
+                 f"Trades this week: {len(fills)} fills, realized {usd(realized)}"]
+        if best and best[1]["pnl"] > 0:
+            lines.append(f"Best: {best[0][1]} {best[0][0]} {usd(best[1]['pnl'])}")
+        if worst and worst[1]["pnl"] < 0:
+            lines.append(f"Worst: {worst[0][1]} {worst[0][0]} {usd(worst[1]['pnl'])}")
+        for p in pos[:4]:
+            side = "Long" if float(p["szi"]) > 0 else "Short"
+            lines.append(f"• {side} {p['coin']} {usd(p['positionValue'])} @ {px(p['entryPx'])}, "
+                         f"{p['leverage']['value']}x, uPnL {usd(p['unrealizedPnl'])}")
+        if len(pos) > 4:
+            lines.append(f"• +{len(pos) - 4} more positions")
+        if not pos:
+            lines.append("• No open positions")
+        rows.append((snap["pnl_week"], "\n".join(lines)))
+    rows.sort(key=lambda r: -r[0])
+    header = [f"📅 <b>Weekly report</b> {datetime.now(timezone.utc):%d %b %Y} ({len(rows)} wallets, best 7d first)", ""]
+    msg = "\n".join(header)
+    for _, block in rows:  # Telegram caps messages at 4096 chars
+        if len(msg) + len(block) > 3800:
+            send(msg)
+            msg = ""
+        msg += block + "\n\n"
+    msg += "<i>Informational only, not financial advice.</i>"
+    send(msg)
+
+
+def weekly_due(st):
+    """Mondays from 09:00 Madrid (08:00 UTC), once per week."""
+    now = datetime.now(timezone.utc)
+    return now.weekday() == 0 and now.hour >= 8 and st.get("last_weekly", "")[:10] != now.strftime("%Y-%m-%d")
 
 
 DATAROMA_RSS = "https://www.dataroma.com/m/rss.xml"  # public feed of superinvestor 13F updates
@@ -332,22 +424,29 @@ def daily_due(st):
     return now.hour >= 8 and st.get("last_daily", "")[:10] != now.strftime("%Y-%m-%d")
 
 
-def run_once(st, force_daily=False):
-    global WALLET
+def run_once(st, force_daily=False, force_weekly=False):
+    global WALLET, KEY
     do_daily = force_daily or daily_due(st)
-    for addr in list(wallets(st)):
-        WALLET = addr
+    for key, ws in list(wallets(st).items()):
+        KEY = key
+        WALLET = os.environ["MY_WALLET"].strip().lower() if key == MY_KEY else key
         try:
-            check_money(st, addr)
+            check_money(st, key)
             check_trades(st)
-            if do_daily:
-                daily(st)
+            if do_daily and ws.get("label") in ("main wallet", "old wallet"):
+                daily(st)  # daily detail only for the fund manager; everyone is in the weekly
         except Exception as e:  # one bad wallet shouldn't stop the others
-            print(f"error on {addr}: {e!r}", file=sys.stderr)
+            print(f"error on {ws.get('label', '?')}: {e!r}", file=sys.stderr)
     try:
         check_hedge_funds(st)
     except Exception as e:
         print(f"error on dataroma feed: {e!r}", file=sys.stderr)
+    if force_weekly or weekly_due(st):
+        try:
+            weekly(st)
+        except Exception as e:
+            print(f"weekly error: {e!r}", file=sys.stderr)
+        st["last_weekly"] = datetime.now(timezone.utc).isoformat()
     if do_daily:
         st["last_daily"] = datetime.now(timezone.utc).isoformat()  # daily commit keeps the scheduled workflow active
     save_state(st)
@@ -357,7 +456,7 @@ if __name__ == "__main__":
     st = load_state()
     minutes = int(sys.argv[sys.argv.index("--loop") + 1]) if "--loop" in sys.argv else 0
     end = time.time() + minutes * 60
-    run_once(st, force_daily="--daily" in sys.argv)
+    run_once(st, force_daily="--daily" in sys.argv, force_weekly="--weekly" in sys.argv)
     while time.time() + 60 < end:  # keep polling every minute (GitHub's cron is often late)
         time.sleep(60)
         run_once(st)

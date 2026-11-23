@@ -18,3 +18,10 @@ Also tracks 5 top traders from the Hyperliquid leaderboard (see `TOP_TRADERS` in
 Their alerts are tagged ⭐ with the wallet's label and short address. Remove a line there to stop tracking one.
 
 Note: GitHub may delay scheduled runs by 5–15 min at busy times. Risk read is informational, not financial advice.
+
+## What it tracks
+- The fund manager's wallet and his old wallet (every trade, money movements, daily summary at 09:00 Madrid)
+- ⭐ Top 1–5 leaderboard traders and 🏅 Pro A–E long-history traders (trade alerts; Pro D "Loco" as an hourly digest)
+- 👤 Your own account: add a repo secret `MY_WALLET` with your public address (read-only; never a seed phrase)
+- 🏦 Hedge fund 13F updates from Dataroma's public RSS feed
+- 📅 Weekly report of every wallet, Mondays 09:00 Madrid
