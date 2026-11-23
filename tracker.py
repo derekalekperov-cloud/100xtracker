@@ -575,6 +575,7 @@ def preview(st):
     import copy
     global WALLET, KEY, info
     st = copy.deepcopy(st)
+    wallets(st)
     real_info = info
     MAIN = "0xe81309ec9b79309e4d108ae3a92d1aa618cd6d74"
     LOCO = "0xf97ad6704baec104d00b88e0c157e2b7b3a1ddd1"
