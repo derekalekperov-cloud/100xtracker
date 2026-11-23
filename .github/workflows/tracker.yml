@@ -1,10 +1,15 @@
 name: hyper-tracker
 on:
   schedule:
-    - cron: "*/5 * * * *"   # start a watcher; each run polls every minute for ~50 min
-  workflow_dispatch:         # manual run also sends the daily summary (test message)
+    - cron: "*/5 * * * *"   # backup starter; GitHub often runs this late or skips it
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "preview = also send the weekly report now; watch = just watch"
+        default: preview
 permissions:
   contents: write
+  actions: write             # lets each run start the next one (keeps it running 24/7)
 concurrency:
   group: tracker             # only one watcher at a time; extra triggers wait in line
   cancel-in-progress: false
@@ -16,8 +21,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - name: Watch wallets (daily summary at 09:00 Madrid is sent automatically)
-        run: python tracker.py --loop 50 ${{ github.event_name == 'workflow_dispatch' && '--daily' || '' }}
+      - name: Watch wallets every minute for ~50 min
+        run: python tracker.py --loop 50 ${{ inputs.mode == 'preview' && '--weekly' || '' }}
         env: { TELEGRAM_TOKEN: "${{ secrets.TELEGRAM_TOKEN }}", TELEGRAM_CHAT_ID: "${{ secrets.TELEGRAM_CHAT_ID }}", MY_WALLET: "${{ secrets.MY_WALLET }}" }
       - name: Save state
         if: always()
@@ -26,3 +31,7 @@ jobs:
           git add state.json && git commit -m "state" -q || true
           git pull --rebase -X ours -q || true
           git push -q
+      - name: Start the next watcher
+        if: always()
+        run: gh workflow run tracker.yml -f mode=watch
+        env: { GH_TOKEN: "${{ github.token }}" }
