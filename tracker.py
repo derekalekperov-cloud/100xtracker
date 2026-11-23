@@ -47,6 +47,11 @@ def save_state(s):
     json.dump(s, open(STATE, "w"), indent=2)
 
 
+def px(x):
+    x = float(x)
+    return f"{x:,.2f}" if x >= 1 else f"{x:.6g}"
+
+
 def usd(x):
     x = float(x)
     s = "-" if x < 0 else ""
@@ -98,14 +103,45 @@ def risk_read(snap, coin):
 
 
 def group(fills):
-    g = defaultdict(lambda: {"sz": 0.0, "ntl": 0.0, "pnl": 0.0, "fee": 0.0, "t": 0})
-    for f in fills:
+    g = defaultdict(lambda: {"sz": 0.0, "ntl": 0.0, "pnl": 0.0, "fee": 0.0, "t": 0, "start": None})
+    for f in sorted(fills, key=lambda f: f["time"]):
         k = (f["coin"], f["dir"])
+        if g[k]["start"] is None:
+            g[k]["start"] = float(f.get("startPosition") or 0)
         sz = float(f["sz"])
         g[k]["sz"] += sz; g[k]["ntl"] += sz * float(f["px"])
         g[k]["pnl"] += float(f["closedPnl"]); g[k]["fee"] += float(f["fee"])
         g[k]["t"] = max(g[k]["t"], f["time"])
     return g
+
+
+def describe(d, coin, v, snap):
+    """Turn Hyperliquid's fill direction into a plain-language headline.
+    Closing a long is NOT a short, and closing a short is NOT a long."""
+    pos = next((p for p in snap["positions"] if p["coin"] == coin), None)
+    now = float(pos["szi"]) if pos else 0.0
+    start = v["start"] or 0.0
+    if d == "Open Long":
+        return ("🟢", f"NEW LONG {coin}" if start == 0 else f"ADDED TO LONG {coin}",
+                "Betting the price goes UP")
+    if d == "Open Short":
+        return ("🔴", f"NEW SHORT {coin}" if start == 0 else f"ADDED TO SHORT {coin}",
+                "Betting the price goes DOWN")
+    if d == "Close Long":
+        full = now <= 0
+        return ("⚪", f"{'CLOSED' if full else 'REDUCED'} LONG {coin}",
+                "Taking profit/loss on a long, this is NOT a short"
+                + ("" if full else f" (still long {now:,.4g} {coin})"))
+    if d == "Close Short":
+        full = now >= 0
+        return ("⚪", f"{'CLOSED' if full else 'REDUCED'} SHORT {coin}",
+                "Exiting a short, this is NOT a new long"
+                + ("" if full else f" (still short {abs(now):,.4g} {coin})"))
+    if d == "Long > Short":
+        return ("🔴", f"FLIPPED LONG → SHORT {coin}", "Closed the long AND opened a short (now betting DOWN)")
+    if d == "Short > Long":
+        return ("🟢", f"FLIPPED SHORT → LONG {coin}", "Closed the short AND opened a long (now betting UP)")
+    return ("🔵", f"{d.upper()} {coin}", "Spot trade" if d in ("Buy", "Sell") else d)
 
 
 def check_trades(state):
@@ -115,12 +151,12 @@ def check_trades(state):
         return
     snap = snapshot()
     for (coin, d), v in sorted(group(fills).items(), key=lambda kv: kv[1]["t"]):
-        icon = "🟢" if "Long" in d and "Open" in d or "Short" in d and "Close" in d else "🔴"
+        icon, head, meaning = describe(d, coin, v, snap)
         verdict, flags = risk_read(snap, coin)
         szs = f"{v['sz']:,.0f}" if v['sz'] >= 100 else f"{v['sz']:,.4f}"
-        lines = [f"{icon} <b>{d} {coin}</b>",
-                 f"Size {szs} {coin} ≈ {usd(v['ntl'])} @ avg {v['ntl']/v['sz']:,.4g}"]
-        if "Close" in d:
+        lines = [f"{icon} <b>{head}</b>", f"<i>{meaning}</i>",
+                 f"Size {szs} {coin} ≈ {usd(v['ntl'])} @ avg {px(v['ntl']/v['sz'])}"]
+        if "Close" in d or ">" in d:
             lines.append(f"Realized PnL: <b>{usd(v['pnl'])}</b>")
         lines += ["", f"<b>Risk read: {verdict}</b>"] + [f"• {f}" for f in flags]
         lines += ["", "<i>Informational only, not financial advice.</i>",
@@ -145,9 +181,9 @@ def daily(state):
     for p in snap["positions"]:
         side = "Long" if float(p["szi"]) > 0 else "Short"
         liq = p.get("liquidationPx")
-        lines.append(f"• {side} {p['coin']} {usd(p['positionValue'])} @ {float(p['entryPx']):,.4g}, "
+        lines.append(f"• {side} {p['coin']} {usd(p['positionValue'])} @ {px(p['entryPx'])}, "
                      f"{p['leverage']['value']}x, uPnL {usd(p['unrealizedPnl'])}"
-                     + (f", liq {float(liq):,.4g}" if liq else ""))
+                     + (f", liq {px(liq)}" if liq else ""))
     if not snap["positions"]:
         lines.append("• None")
     send("\n".join(lines))
