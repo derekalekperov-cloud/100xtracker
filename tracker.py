@@ -6,13 +6,23 @@ Usage:
   python tracker.py --daily   # send the daily summary
   python tracker.py --dry-run # print instead of sending
 
-Env: TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, WALLET (optional)
+Env: TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
+
+Tracked wallets live in state.json. Money movements are watched too: big transfers
+out, withdrawals, top-ups, liquidations, and the account being emptied. If he sends
+funds straight to another Hyperliquid address, that address is tracked automatically.
 """
 import json, os, sys, time, urllib.request
 from collections import defaultdict
 from datetime import datetime, timezone
 
-WALLET = os.environ.get("WALLET", "0xe81309ec9b79309e4d108ae3a92d1aa618cd6d74")
+DEFAULT_WALLETS = {
+    "0xe81309ec9b79309e4d108ae3a92d1aa618cd6d74": "main wallet",
+    "0x89da4baec446f35a1cbe17a9d1ee5c70b05ee43f": "old wallet",
+}
+WALLET = None          # wallet currently being processed (set in main loop)
+MIN_MOVE = 50_000      # USD; smaller transfers are ignored
+SYSTEM_PREFIX = "0x2000000000000000000000000000000000"  # HyperEVM bridge addresses
 API = "https://api.hyperliquid.xyz/info"
 STATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state.json")
 DRY = "--dry-run" in sys.argv
@@ -40,7 +50,74 @@ def load_state():
     try:
         return json.load(open(STATE))
     except FileNotFoundError:
-        return {"last_fill_ms": int(time.time() * 1000)}  # first run: only future trades
+        return {}  # first run: only future activity is reported
+
+
+def wallets(state):
+    """Upgrade old single-wallet state and make sure defaults are tracked."""
+    now = int(time.time() * 1000)
+    w = state.setdefault("wallets", {})
+    for addr, label in DEFAULT_WALLETS.items():
+        if addr not in w:
+            w[addr] = {"label": label, "last_fill_ms": now, "last_ledger_ms": now, "peak": 0}
+    main = w["0xe81309ec9b79309e4d108ae3a92d1aa618cd6d74"]
+    if "last_fill_ms" in state:  # from the first version
+        main["last_fill_ms"] = state.pop("last_fill_ms")
+    return w
+
+
+def short(a):
+    return a[:6] + "…" + a[-4:]
+
+
+def check_money(state, w):
+    """Alert on money moving in/out, liquidations, and the account being emptied."""
+    me = WALLET
+    ws = state["wallets"][me]
+    ups = info({"type": "userNonFundingLedgerUpdates", "user": me,
+                "startTime": ws["last_ledger_ms"] + 1})
+    tag = f"[{ws['label']} {short(me)}]"
+    for u in sorted(ups, key=lambda u: u["time"]):
+        d = u["delta"]; t = d["type"]
+        amt = float(d.get("usdcValue") or d.get("usdc") or d.get("amount") or 0)
+        if t == "liquidation":
+            send(f"🚨 <b>LIQUIDATED</b> {tag}\nPositions were force-closed by the exchange.")
+        elif t == "withdraw" and amt >= MIN_MOVE:
+            send(f"💸 <b>WITHDRAWAL {usd(amt)}</b> {tag}\nMoney left Hyperliquid to an outside wallet/exchange.\n"
+                 "If he starts a new wallet, it will usually show up with a deposit of a similar amount.")
+        elif t in ("send", "spotTransfer") and amt >= MIN_MOVE:
+            dest, src = d.get("destination", "").lower(), d.get("user", "").lower()
+            if src == me and dest != me:
+                if dest.startswith(SYSTEM_PREFIX):
+                    send(f"💸 <b>MOVED {usd(amt)} OFF HYPERLIQUID</b> {tag}\nSent to the HyperEVM bridge "
+                         "(this is how he moved funds out of his old wallet on Sep 17).")
+                elif dest in state["wallets"]:
+                    send(f"↔️ <b>{usd(amt)} moved</b> {tag} → {state['wallets'][dest]['label']} {short(dest)}")
+                else:
+                    now = int(time.time() * 1000)
+                    state["wallets"][dest] = {"label": f"followed from {short(me)}", "last_fill_ms": now,
+                                              "last_ledger_ms": now, "peak": 0}
+                    send(f"🧭 <b>{usd(amt)} SENT TO A NEW WALLET</b> {tag}\n→ {dest}\n"
+                         f"✅ I'm now tracking this wallet automatically.\nhttps://hypurrscan.io/address/{dest}")
+            elif dest == me:
+                who = state["wallets"].get(src, {}).get("label", "unknown")
+                if src not in state["wallets"]:
+                    send(f"💰 <b>{usd(amt)} ADDED</b> {tag} from {short(src)} ({who})")
+        elif t == "deposit" and amt >= MIN_MOVE:
+            send(f"💰 <b>DEPOSIT {usd(amt)}</b> {tag}\nNew money added from outside Hyperliquid.")
+    if ups:
+        ws["last_ledger_ms"] = max(u["time"] for u in ups)
+    # emptied / big drawdown check
+    acct = float(info({"type": "clearinghouseState", "user": me})["marginSummary"]["accountValue"])
+    spot = info({"type": "spotClearinghouseState", "user": me})
+    acct += sum(float(b["total"]) for b in spot.get("balances", []) if b["coin"] == "USDC")
+    ws["peak"] = max(ws.get("peak", 0), acct)
+    if ws["peak"] >= 1e6 and acct < 0.1 * ws["peak"] and not ws.get("emptied_alerted"):
+        send(f"⚠️ <b>WALLET EMPTIED</b> {tag}\nNow {usd(acct)}, down from {usd(ws['peak'])}. "
+             "Check the alerts above to see where the money went.")
+        ws["emptied_alerted"] = True
+    elif acct >= 0.5 * ws["peak"]:
+        ws["emptied_alerted"] = False
 
 
 def save_state(s):
@@ -146,7 +223,7 @@ def describe(d, coin, v, snap):
 
 def check_trades(state):
     fills = info({"type": "userFillsByTime", "user": WALLET,
-                  "startTime": state["last_fill_ms"] + 1, "aggregateByTime": True})
+                  "startTime": state["wallets"][WALLET]["last_fill_ms"] + 1, "aggregateByTime": True})
     if not fills:
         return
     snap = snapshot()
@@ -154,7 +231,8 @@ def check_trades(state):
         icon, head, meaning = describe(d, coin, v, snap)
         verdict, flags = risk_read(snap, coin)
         szs = f"{v['sz']:,.0f}" if v['sz'] >= 100 else f"{v['sz']:,.4f}"
-        lines = [f"{icon} <b>{head}</b>", f"<i>{meaning}</i>",
+        lbl = state["wallets"][WALLET]["label"]
+        lines = [f"{icon} <b>{head}</b>  [{lbl}]", f"<i>{meaning}</i>",
                  f"Size {szs} {coin} ≈ {usd(v['ntl'])} @ avg {px(v['ntl']/v['sz'])}"]
         if "Close" in d or ">" in d:
             lines.append(f"Realized PnL: <b>{usd(v['pnl'])}</b>")
@@ -162,7 +240,7 @@ def check_trades(state):
         lines += ["", "<i>Informational only, not financial advice.</i>",
                   f"https://hypurrscan.io/address/{WALLET}"]
         send("\n".join(lines))
-    state["last_fill_ms"] = max(f["time"] for f in fills)
+    state["wallets"][WALLET]["last_fill_ms"] = max(f["time"] for f in fills)
 
 
 def daily(state):
@@ -170,7 +248,9 @@ def daily(state):
     fills = info({"type": "userFillsByTime", "user": WALLET,
                   "startTime": now - 86_400_000, "aggregateByTime": True})
     snap = snapshot()
-    lines = [f"📊 <b>Daily summary</b> {datetime.now(timezone.utc):%d %b %Y}",
+    if snap["acct"] < 1 and not fills:
+        return
+    lines = [f"📊 <b>Daily summary</b> {datetime.now(timezone.utc):%d %b %Y} [{state['wallets'][WALLET]['label']} {short(WALLET)}]",
              f"Account value {usd(snap['acct'])} · 24h PnL {usd(snap['pnl_day'])}",
              f"7d {usd(snap['pnl_week'])} · 30d {usd(snap['pnl_month'])} · all-time {usd(snap['pnl_all'])}",
              "", "<b>Trades (24h)</b>"]
@@ -191,9 +271,16 @@ def daily(state):
 
 if __name__ == "__main__":
     st = load_state()
+    for addr in list(wallets(st)):
+        WALLET = addr
+        try:
+            if "--daily" in sys.argv:
+                daily(st)
+            else:
+                check_money(st, addr)
+                check_trades(st)
+        except Exception as e:  # one bad wallet shouldn't stop the others
+            print(f"error on {addr}: {e!r}", file=sys.stderr)
     if "--daily" in sys.argv:
-        daily(st)
         st["last_daily"] = datetime.now(timezone.utc).isoformat()  # daily commit keeps the scheduled workflow active
-    else:
-        check_trades(st)
     save_state(st)
