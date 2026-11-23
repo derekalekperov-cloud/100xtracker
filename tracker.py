@@ -12,7 +12,7 @@ Tracked wallets live in state.json. Money movements are watched too: big transfe
 out, withdrawals, top-ups, liquidations, and the account being emptied. If he sends
 funds straight to another Hyperliquid address, that address is tracked automatically.
 """
-import json, os, sys, time, urllib.request
+import html, json, os, re, sys, time, urllib.error, urllib.request
 from collections import defaultdict
 from datetime import datetime, timezone
 
@@ -52,10 +52,20 @@ STATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state.json")
 DRY = "--dry-run" in sys.argv
 
 
-def info(body):
+def info(body, tries=4):
+    """Hyperliquid API call; waits and retries on rate limits, server hiccups and network blips."""
     req = urllib.request.Request(API, json.dumps(body).encode(), {"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return json.load(r)
+    for i in range(tries):
+        try:
+            with urllib.request.urlopen(req, timeout=20) as r:
+                return json.load(r)
+        except urllib.error.HTTPError as e:
+            if e.code != 429 and e.code < 500 or i == tries - 1:
+                raise
+        except (urllib.error.URLError, TimeoutError, ConnectionError):
+            if i == tries - 1:
+                raise
+        time.sleep(2 * 2 ** i)  # 2s, 4s, 8s
 
 
 def load_state():
@@ -243,13 +253,39 @@ def send(text, kb=None):
         extra = ("\n[" + "] [".join(b["text"] for r in kb for b in r) + "]") if kb else ""
         print(text + extra + "\n" + "-" * 40)
         return
-    tok, chat = os.environ["TELEGRAM_TOKEN"], os.environ["TELEGRAM_CHAT_ID"]
-    msg = {"chat_id": chat, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True}
+    msg = {"text": text, "parse_mode": "HTML", "disable_web_page_preview": True}
     if kb:
         msg["reply_markup"] = {"inline_keyboard": kb}
-    urllib.request.urlopen(urllib.request.Request(
-        f"https://api.telegram.org/bot{tok}/sendMessage", json.dumps(msg).encode(),
-        {"Content-Type": "application/json"}), timeout=30).read()
+    tg("sendMessage", msg)
+
+
+def tg(method, msg, tries=3):
+    """Telegram call that never crashes the tracker: retries network errors, obeys flood
+    limits, and if Telegram rejects the formatting it resends the alert as plain text."""
+    tok, chat = os.environ["TELEGRAM_TOKEN"], os.environ["TELEGRAM_CHAT_ID"]
+    msg = dict(msg, chat_id=chat)
+    for i in range(tries):
+        try:
+            urllib.request.urlopen(urllib.request.Request(
+                f"https://api.telegram.org/bot{tok}/{method}", json.dumps(msg).encode(),
+                {"Content-Type": "application/json"}), timeout=20).read()
+            return True
+        except urllib.error.HTTPError as e:
+            body = e.read().decode(errors="replace")[:200]
+            if e.code == 429:  # flood limit: wait as told
+                m = re.search(r'"retry_after":(\d+)', body)
+                time.sleep(min(int(m.group(1)) if m else 5, 30))
+            elif e.code == 400 and msg.get("parse_mode"):
+                print(f"telegram rejected formatting, resending plain: {body}", file=sys.stderr)
+                msg.pop("parse_mode")
+                msg["text"] = re.sub(r"<[^>]+>", "", msg["text"]).replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+            else:
+                print(f"telegram error {e.code}: {body}", file=sys.stderr)
+                return False
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+            print(f"telegram network error: {e!r}", file=sys.stderr)
+            time.sleep(3 * (i + 1))
+    return False
 
 
 def risk_read(snap, coin):
@@ -364,6 +400,10 @@ def check_money(state, w):
                 f"{who(ws)} brought {usd(amt)} of new money onto Hyperliquid.")
     if ups:
         ws["last_ledger_ms"] = max(u["time"] for u in ups)
+    now = time.time()
+    if not ups and now - ws.get("_eq_checked", 0) < 600:
+        return  # balance check every 10 min (or right away after money moves) to stay under rate limits
+    ws["_eq_checked"] = now
     acct = equity(dict(info({"type": "portfolio", "user": me})))
     ws["peak"] = max(ws.get("peak", 0), acct)
     if ws["peak"] >= 1e6 and acct < 0.1 * ws["peak"] and not ws.get("emptied_alerted"):
@@ -506,9 +546,16 @@ def send_photo(png, caption, kb=None):
     parts.append(f'--{b}\r\nContent-Disposition: form-data; name="photo"; filename="weekly.png"\r\n'
                  f'Content-Type: image/png\r\n\r\n'.encode() + png + b"\r\n")
     parts.append(f"--{b}--\r\n".encode())
-    urllib.request.urlopen(urllib.request.Request(
-        f"https://api.telegram.org/bot{tok}/sendPhoto", b"".join(parts),
-        {"Content-Type": f"multipart/form-data; boundary={b}"}), timeout=60).read()
+    for i in range(2):
+        try:
+            urllib.request.urlopen(urllib.request.Request(
+                f"https://api.telegram.org/bot{tok}/sendPhoto", b"".join(parts),
+                {"Content-Type": f"multipart/form-data; boundary={b}"}), timeout=60).read()
+            return
+        except Exception as e:
+            print(f"photo send failed: {e!r}", file=sys.stderr)
+            time.sleep(5)
+    send(caption, kb)  # chart failed twice: still deliver the text
 
 
 def weekly_chart(rows):
@@ -637,6 +684,7 @@ def daily_due(st):
 def run_once(st, force_daily=False, force_weekly=False):
     global WALLET, KEY
     do_daily = force_daily or daily_due(st)
+    errors = 0
     for key, ws in list(wallets(st).items()):
         KEY = key
         WALLET = os.environ["MY_WALLET"].strip().lower() if key == MY_KEY else key
@@ -647,6 +695,8 @@ def run_once(st, force_daily=False, force_weekly=False):
                 daily(st)  # daily detail only for the fund manager; everyone is in the weekly
         except Exception as e:  # one bad wallet shouldn't stop the others
             print(f"error on {ws.get('label', '?')}: {e!r}", file=sys.stderr)
+            errors += 1
+    health(st, errors, len(st["wallets"]))
     if force_weekly or weekly_due(st):
         try:
             weekly(st)
@@ -656,6 +706,24 @@ def run_once(st, force_daily=False, force_weekly=False):
     if do_daily:
         st["last_daily"] = datetime.now(timezone.utc).isoformat()  # daily commit keeps the scheduled workflow active
     save_state(st)
+
+
+def health(st, errors, total):
+    """Tell the user on Telegram if the bot can't read Hyperliquid for 10+ minutes, and when it recovers."""
+    h = st.setdefault("health", {"bad_since": 0, "alerted": False})
+    now = time.time()
+    if errors * 2 < total:  # most wallets fine
+        if h["alerted"]:
+            send("✅ <b>BOT RECOVERED</b>\nHyperliquid data is flowing again. Alerts are back to normal; "
+                 "anything that happened during the outage is sent above or now.")
+        h.update(bad_since=0, alerted=False)
+    elif not h["bad_since"]:
+        h["bad_since"] = now
+    elif now - h["bad_since"] > 600 and not h["alerted"]:
+        send("⚠️ <b>BOT HEALTH</b>\nI can't read Hyperliquid data for 10+ minutes "
+             f"({errors}/{total} wallets failing). Usually their API is down or rate-limiting. "
+             "No trades are lost: I'll catch up and send them as soon as it's back.")
+        h["alerted"] = True
 
 
 def preview(st, only_weekly=False):
