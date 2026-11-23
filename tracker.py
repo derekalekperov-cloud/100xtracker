@@ -20,6 +20,16 @@ DEFAULT_WALLETS = {
     "0xe81309ec9b79309e4d108ae3a92d1aa618cd6d74": "main wallet",
     "0x89da4baec446f35a1cbe17a9d1ee5c70b05ee43f": "old wallet",
 }
+# Top traders shortlisted from the Hyperliquid leaderboard (Nov 2026). Their alerts are
+# tagged with a ⭐ and their own label so they never mix with the fund manager's.
+# Money sent from these wallets to new addresses is reported but not auto-followed.
+TOP_TRADERS = {
+    "0x015354106478dda69c4aae3c0cf801290b738052": "Top 1 · BTC/ZEC short-seller",
+    "0xfce053a5e461683454bf37ad66d20344c0e3f4c0": "Top 2 · BTC trader",
+    "0x9c16bc8f1104e4d2f72267eb981fa12de7cc4a6f": "Top 3 · SOL/BTC/ETH",
+    "0xf899937184168b1d9dee75acbaa3fef0f52888db": "Top 4 · SOL/BTC/ETH short-seller",
+    "0x15a4f009bb324a3fb9e36137136b201e3fe0dfdb": "Top 5 · big ETH/BTC whale",
+}
 WALLET = None          # wallet currently being processed (set in main loop)
 MIN_MOVE = 50_000      # USD; smaller transfers are ignored
 SYSTEM_PREFIX = "0x2000000000000000000000000000000000"  # HyperEVM bridge addresses
@@ -60,6 +70,10 @@ def wallets(state):
     for addr, label in DEFAULT_WALLETS.items():
         if addr not in w:
             w[addr] = {"label": label, "last_fill_ms": now, "last_ledger_ms": now, "peak": 0}
+    for addr, label in TOP_TRADERS.items():
+        if addr not in w:
+            w[addr] = {"label": "⭐ " + label, "last_fill_ms": now, "last_ledger_ms": now,
+                       "peak": 0, "follow": False}
     main = w["0xe81309ec9b79309e4d108ae3a92d1aa618cd6d74"]
     if "last_fill_ms" in state:  # from the first version
         main["last_fill_ms"] = state.pop("last_fill_ms")
@@ -93,6 +107,9 @@ def check_money(state, w):
                          "(this is how he moved funds out of his old wallet on Sep 17).")
                 elif dest in state["wallets"]:
                     send(f"↔️ <b>{usd(amt)} moved</b> {tag} → {state['wallets'][dest]['label']} {short(dest)}")
+                elif not ws.get("follow", True):
+                    send(f"↗️ <b>{usd(amt)} sent out</b> {tag} → {short(dest)}\n"
+                         f"https://hypurrscan.io/address/{dest}")
                 else:
                     now = int(time.time() * 1000)
                     state["wallets"][dest] = {"label": f"followed from {short(me)}", "last_fill_ms": now,
@@ -236,7 +253,7 @@ def check_trades(state):
         verdict, flags = risk_read(snap, coin)
         szs = f"{v['sz']:,.0f}" if v['sz'] >= 100 else f"{v['sz']:,.4f}"
         lbl = state["wallets"][WALLET]["label"]
-        lines = [f"{icon} <b>{head}</b>  [{lbl}]", f"<i>{meaning}</i>",
+        lines = [f"{icon} <b>{head}</b>  [{lbl} {short(WALLET)}]", f"<i>{meaning}</i>",
                  f"Size {szs} {coin} ≈ {usd(v['ntl'])} @ avg {px(v['ntl']/v['sz'])}"]
         if "Close" in d or ">" in d:
             lines.append(f"Realized PnL: <b>{usd(v['pnl'])}</b>")
