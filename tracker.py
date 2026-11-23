@@ -108,9 +108,7 @@ def check_money(state, w):
     if ups:
         ws["last_ledger_ms"] = max(u["time"] for u in ups)
     # emptied / big drawdown check
-    acct = float(info({"type": "clearinghouseState", "user": me})["marginSummary"]["accountValue"])
-    spot = info({"type": "spotClearinghouseState", "user": me})
-    acct += sum(float(b["total"]) for b in spot.get("balances", []) if b["coin"] == "USDC")
+    acct = equity(dict(info({"type": "portfolio", "user": me})))
     ws["peak"] = max(ws.get("peak", 0), acct)
     if ws["peak"] >= 1e6 and acct < 0.1 * ws["peak"] and not ws.get("emptied_alerted"):
         send(f"⚠️ <b>WALLET EMPTIED</b> {tag}\nNow {usd(acct)}, down from {usd(ws['peak'])}. "
@@ -136,6 +134,12 @@ def usd(x):
     return f"{s}${x/1e6:.2f}M" if x >= 1e6 else f"{s}${x/1e3:.1f}k" if x >= 1e3 else f"{s}${x:.0f}"
 
 
+def equity(pf):
+    """Total account value as Hyperliquid reports it (perps + spot, no double counting)."""
+    h = pf.get("day", {}).get("accountValueHistory") or [[0, 0]]
+    return float(h[-1][1])
+
+
 def snapshot():
     cs = info({"type": "clearinghouseState", "user": WALLET})
     pf = dict(info({"type": "portfolio", "user": WALLET}))
@@ -144,7 +148,7 @@ def snapshot():
         h = pf.get(k, {}).get("pnlHistory") or [[0, 0]]
         return float(h[-1][1])
     return {
-        "acct": float(cs["marginSummary"]["accountValue"]),
+        "acct": equity(pf) or float(cs["marginSummary"]["accountValue"]),
         "ntl": float(cs["marginSummary"]["totalNtlPos"]),
         "positions": [p["position"] for p in cs["assetPositions"]],
         "pnl_day": pnl("day"), "pnl_week": pnl("week"),

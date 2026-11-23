@@ -5,14 +5,14 @@
       "label": "main wallet",
       "last_fill_ms": 1795450577128,
       "last_ledger_ms": 1795451510575,
-      "peak": 25337044.989600003,
+      "peak": 0,
       "emptied_alerted": false
     },
     "0x89da4baec446f35a1cbe17a9d1ee5c70b05ee43f": {
       "label": "old wallet",
       "last_fill_ms": 1795451510575,
       "last_ledger_ms": 1795451510575,
-      "peak": 8.9e-07,
+      "peak": 0,
       "emptied_alerted": false
     }
   }
