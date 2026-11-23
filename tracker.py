@@ -394,42 +394,6 @@ def weekly_due(st):
     return now.weekday() == 0 and now.hour >= 8 and st.get("last_weekly", "")[:10] != now.strftime("%Y-%m-%d")
 
 
-DATAROMA_RSS = "https://www.dataroma.com/m/rss.xml"  # public feed of superinvestor 13F updates
-
-
-def check_hedge_funds(st):
-    """Alert on new superinvestor portfolio updates from Dataroma's public RSS feed.
-    Checked every 30 min. Source data is quarterly 13F filings (up to 45 days old)."""
-    import re, xml.etree.ElementTree as ET
-    hf = st.setdefault("hedge_funds", {"seen": [], "last_check": 0})
-    if time.time() - hf["last_check"] < 1800:
-        return
-    hf["last_check"] = time.time()
-    req = urllib.request.Request(DATAROMA_RSS, headers={"User-Agent": "personal-portfolio-alerts/1.0"})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        root = ET.fromstring(r.read())
-    first_run = not hf["seen"]
-    for item in reversed(root.findall("./channel/item")):
-        guid = (item.findtext("guid") or item.findtext("link") or "").strip()
-        if not guid or guid in hf["seen"]:
-            continue
-        hf["seen"].append(guid)
-        if first_run:
-            continue  # don't flood with the existing backlog
-        name = (item.findtext("title") or "").strip()
-        desc = item.findtext("description") or ""
-        moves = []
-        for label, tickers in re.findall(r"<b>([^<:]+):</b>\s*([^<]*)", desc):
-            if tickers.strip():
-                moves.append(f"<b>{label}:</b> {tickers.strip()}")
-        m = re.search(r"#(\d{4})(\d)$", guid)
-        qtr = f" (Q{m.group(2)} {m.group(1)} filing)" if m else ""
-        send("\n".join([f"🏦 <b>{name}</b> updated its portfolio{qtr}", *moves, "",
-                         "<i>From quarterly 13F filings: these trades happened up to ~3–4 months ago.</i>",
-                         f"Source: Dataroma · {(item.findtext('link') or '').strip()}"]))
-    hf["seen"] = hf["seen"][-500:]
-
-
 def daily_due(st):
     """09:00 Madrid (08:00 UTC in winter; good enough year-round) and not yet sent today."""
     now = datetime.now(timezone.utc)
@@ -449,10 +413,6 @@ def run_once(st, force_daily=False, force_weekly=False):
                 daily(st)  # daily detail only for the fund manager; everyone is in the weekly
         except Exception as e:  # one bad wallet shouldn't stop the others
             print(f"error on {ws.get('label', '?')}: {e!r}", file=sys.stderr)
-    try:
-        check_hedge_funds(st)
-    except Exception as e:
-        print(f"error on dataroma feed: {e!r}", file=sys.stderr)
     if force_weekly or weekly_due(st):
         try:
             weekly(st)
