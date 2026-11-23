@@ -91,8 +91,10 @@ def wallets(state):
             w[addr] = {"label": "🏅 " + label, "last_fill_ms": now, "last_ledger_ms": now,
                        "peak": 0, "follow": False, "batch": batch}
     if os.environ.get("MY_WALLET") and MY_KEY not in w:
-        w[MY_KEY] = {"label": "👤 You", "last_fill_ms": now, "last_ledger_ms": now,
+        w[MY_KEY] = {"label": "👛 Mini Wallet", "last_fill_ms": now, "last_ledger_ms": now,
                      "peak": 0, "follow": False}
+    if MY_KEY in w:
+        w[MY_KEY]["label"] = "👛 Mini Wallet"
     main = w["0xe81309ec9b79309e4d108ae3a92d1aa618cd6d74"]
     if "last_fill_ms" in state:  # from the first version
         main["last_fill_ms"] = state.pop("last_fill_ms")
@@ -109,7 +111,7 @@ def save_state(s):
 
 def px(x):
     x = float(x)
-    return f"{x:,.2f}" if x >= 1 else f"{x:.6g}"
+    return f"${x:,.2f}" if x >= 1 else f"${x:.6g}"
 
 
 def usd(x):
@@ -166,33 +168,78 @@ def group(fills):
     return g
 
 
+CRYPTO = {"BTC": "Bitcoin", "ETH": "Ethereum", "SOL": "Solana", "HYPE": "Hyperliquid", "ZEC": "Zcash",
+          "DOGE": "Dogecoin", "SUI": "Sui", "AVAX": "Avalanche", "LINK": "Chainlink",
+          "ADA": "Cardano", "PUMP": "Pump.fun", "FARTCOIN": "Fartcoin", "ENA": "Ethena", "TRUMP": "Trump coin",
+          "kPEPE": "Pepe", "kBONK": "Bonk", "LTC": "Litecoin", "AAVE": "Aave", "TAO": "Bittensor",
+          "WLD": "Worldcoin", "XMR": "Monero", "TON": "Toncoin", "DOT": "Polkadot", "NEAR": "Near",
+          "ARB": "Arbitrum", "OP": "Optimism", "APT": "Aptos", "TIA": "Celestia", "SEI": "Sei",
+          "UNI": "Uniswap", "BCH": "Bitcoin Cash", "TRX": "Tron", "PENGU": "Pudgy Penguins",
+          "VIRTUAL": "Virtuals", "ONDO": "Ondo", "JUP": "Jupiter", "WIF": "dogwifhat", "XPL": "Plasma"}
+MARKETS = {"GOLD": "Gold", "SILVER": "Silver", "CL": "Oil (WTI)", "BRENTOIL": "Oil (Brent)",
+           "NATGAS": "Natural gas", "COPPER": "Copper", "PLATINUM": "Platinum", "PALLADIUM": "Palladium",
+           "URANIUM": "Uranium", "SP500": "S&P 500 index", "XYZ100": "US Tech 100 index",
+           "EUR": "Euro", "JPY": "Japanese yen", "GBP": "British pound", "DXY": "US dollar index",
+           "VIX": "Fear index (VIX)", "SPCX": "SpaceX stock", "JP225": "Japan 225 index", "KR200": "Korea 200 index"}
+NAMES = {}
+
+
+def asset(coin):
+    """Plain-English name: 'Bitcoin (BTC)', 'Anthropic stock', 'Gold'."""
+    if coin in NAMES:
+        return NAMES[coin]
+    if ":" in coin:  # stock / commodity markets on other exchanges (e.g. xyz:NVDA)
+        tick = coin.split(":", 1)[1]
+        name = MARKETS.get(tick)
+        if not name:
+            try:
+                desc = (info({"type": "perpAnnotation", "coin": coin}, tries=1) or {}).get("description") or ""
+            except Exception:
+                desc = ""
+            m = re.search(r"references 1 (?:share of )?(.+?)(?:,? (?:Inc\.|Corp\.|Corporation|PBC|Ltd\.?|plc|N\.V\.|S\.A\.)| Class| common| ordinary| \()", desc)
+            name = f"{html.escape(m.group(1).strip(' ,'))} stock" if m else f"{html.escape(tick)} stock"
+    elif coin in CRYPTO:
+        name = f"{CRYPTO[coin]} ({coin})"
+    else:
+        name = html.escape(coin)
+    NAMES[coin] = name
+    return name
+
+
 def describe(d, coin, v, snap):
-    """Turn Hyperliquid's fill direction into a plain-language headline.
-    Closing a long is NOT a short, and closing a short is NOT a long."""
+    """Plain-language headline. Returns (icon, title, meaning, verb).
+    Selling to close an UP bet is NOT a bet on the price falling, and vice versa."""
     pos = next((p for p in snap["positions"] if p["coin"] == coin), None)
     now = float(pos["szi"]) if pos else 0.0
+    left = usd(abs(float(pos["positionValue"]))) if pos else ""
     start = v["start"] or 0.0
+    name = asset(coin)
     if d == "Open Long":
-        return ("🟢", f"NEW LONG {coin}" if start == 0 else f"ADDED TO LONG {coin}",
-                "Betting the price goes UP")
+        verb = "Bought" if start == 0 else "Bought more"
+        return ("🟢", f"{verb.upper()} · {name}",
+                "New bet that the price goes UP 📈" if start == 0 else "Added to a bet that the price goes UP 📈", verb)
     if d == "Open Short":
-        return ("🔴", f"NEW SHORT {coin}" if start == 0 else f"ADDED TO SHORT {coin}",
-                "Betting the price goes DOWN")
+        verb = "Shorted" if start == 0 else "Shorted more"
+        return ("🔴", f"{verb.upper()} · {name}",
+                "New bet that the price goes DOWN 📉" if start == 0 else "Added to a bet that the price goes DOWN 📉", verb)
     if d == "Close Long":
         full = now <= 0
-        return ("⚪", f"{'CLOSED' if full else 'REDUCED'} LONG {coin}",
-                "Taking profit/loss on a long, this is NOT a short"
-                + ("" if full else f" (still long {now:,.4g} {coin})"))
+        verb = "Sold all" if full else "Sold some"
+        return ("⚪", f"{verb.upper()} · {name}",
+                "Cashed out an UP bet. This is NOT a bet on it falling"
+                + ("" if full else f". Still holding {left}"), verb)
     if d == "Close Short":
         full = now >= 0
-        return ("⚪", f"{'CLOSED' if full else 'REDUCED'} SHORT {coin}",
-                "Exiting a short, this is NOT a new long"
-                + ("" if full else f" (still short {abs(now):,.4g} {coin})"))
+        verb = "Closed short" if full else "Closed part of short"
+        return ("⚪", f"{verb.upper()} · {name}",
+                "Cashed out a DOWN bet. This is NOT a bet on it rising"
+                + ("" if full else f". Still betting {left} on it falling"), verb)
     if d == "Long > Short":
-        return ("🔴", f"FLIPPED LONG → SHORT {coin}", "Closed the long AND opened a short (now betting DOWN)")
+        return ("🔴", f"SWITCHED TO SHORT · {name}", "Sold the UP bet and now bets the price goes DOWN 📉", "Switched to short")
     if d == "Short > Long":
-        return ("🟢", f"FLIPPED SHORT → LONG {coin}", "Closed the short AND opened a long (now betting UP)")
-    return ("🔵", f"{d.upper()} {coin}", "Spot trade" if d in ("Buy", "Sell") else d)
+        return ("🟢", f"SWITCHED TO LONG · {name}", "Closed the DOWN bet and now bets the price goes UP 📈", "Switched to long")
+    verb = {"Buy": "Bought", "Sell": "Sold"}.get(d, d)
+    return ("🔵", f"{verb.upper()} · {name}", "Spot trade (owning the coin, no leverage)", verb)
 
 
 # ───────────────────────── Message design ─────────────────────────
@@ -244,7 +291,7 @@ def pct(x):
 def buttons(addr, coin=None):
     row = [{"text": "🔍 Wallet", "url": f"https://hypurrscan.io/address/{addr}"}]
     if coin:
-        row.append({"text": f"📈 {coin} chart", "url": f"https://app.hyperliquid.xyz/trade/{coin}"})
+        row.append({"text": f"📈 {coin.split(':')[-1]} chart", "url": f"https://app.hyperliquid.xyz/trade/{coin}"})
     return [row]
 
 
@@ -306,47 +353,45 @@ def risk_read(snap, coin):
             facts["dist"] = dist
             dot = "🔴" if dist < 15 else "🟡" if dist < 35 else "🟢"
             reds += dist < 15
-            flags.append(f"{dot} Liquidation {px(liq)} ({dist:.0f}% away)")
+            flags.append(f"{dot} Wiped out if the price moves {dist:.0f}% the wrong way ({px(liq)})")
         share = float(pos["positionValue"]) / max(snap["ntl"], 1) * 100
         if share > 80 and len(snap["positions"]) == 1:
-            flags.append(f"🟡 All-in: 100% of exposure in {coin}")
+            flags.append("🟡 All eggs in one basket: this is the only bet")
     dot = "🔴" if eff > 5 else "🟡" if eff > 2.5 else "🟢"
     reds += eff > 5
-    flags.append(f"{dot} Leverage {eff:.1f}x on {usd(acct)}")
+    flags.append(f"{dot} Borrowing: bets total {eff:.1f}x the {usd(acct)} account")
     dot = "🔴" if snap["pnl_all"] < 0 else "🟢"
     reds += snap["pnl_all"] < 0
-    flags.append(f"{dot} Track record {usd(snap['pnl_all'])} all-time · {usd(snap['pnl_month'])} 30d")
+    flags.append(f"{dot} Track record: {usd(snap['pnl_all'])} all-time · {usd(snap['pnl_month'])} last 30 days")
     facts["eff"] = eff
     return min(reds, 2), flags, facts
 
 
-RISK = ["🟢 Contained", "🟡 Elevated", "🔴 High"]
+RISK = ["🟢 Low", "🟡 Medium", "🔴 High"]
 
 
 def trade_summary(ws, d, coin, v, level, facts, snap):
-    name = who(ws)
-    size = usd(v["ntl"])
+    name, size, what = who(ws), usd(v["ntl"]), asset(coin)
     lev = facts.get("lev")
-    levs = f" at {lev}x" if lev else ""
     if d.startswith("Open"):
-        side = "long" if "Long" in d else "short"
-        verb = "added to a" if (v["start"] or 0) else "opened a"
-        s = f"{name} {verb} {size} {coin} {side}{levs}."
+        way = "UP" if "Long" in d else "DOWN"
+        s = (f"{name} {'added' if (v['start'] or 0) else 'put'} {size} on {what} going {way}"
+             + (f", with {lev}x leverage" if lev and lev > 1 else "") + ".")
         if "dist" in facts:
-            s += f" Liquidation is {facts['dist']:.0f}% away."
+            s += f" It gets wiped out if the price moves {facts['dist']:.0f}% the wrong way."
     elif d.startswith("Close"):
-        side = "long" if "Long" in d else "short"
-        res = "profit" if v["pnl"] >= 0 else "loss"
-        s = (f"{name} closed {'part of ' if v.get('partial') else ''}a {side} on {coin} for a {usd(abs(v['pnl']))} {res}. "
-             f"This is an exit, not a new {'short' if side == 'long' else 'long'}.")
+        way = "UP" if "Long" in d else "DOWN"
+        res = f"{usd(abs(v['pnl']))} {'profit' if v['pnl'] >= 0 else 'loss'}"
+        s = (f"{name} cashed out {'part of ' if v.get('partial') else ''}a bet on {what} going {way}, for a {res}. "
+             f"This is an exit, not a new bet on it going {'DOWN' if way == 'UP' else 'UP'}.")
     elif ">" in d:
-        s = f"{name} flipped {coin} to {'SHORT' if d.endswith('Short') else 'LONG'} with {size}{levs}."
+        s = f"{name} switched sides on {what}: now betting {size} it goes {'DOWN' if d.endswith('Short') else 'UP'}."
     else:
-        s = f"{name}: {d} {coin} for {size}."
-    tail = {0: "Risk looks contained.", 1: "Some risk flags, size carefully.",
-            2: "Several red flags, high risk to copy."}[level]
-    if snap["pnl_all"] < 0 and ws.get("label") != "👤 You":
-        tail += f" Note: this wallet is {usd(snap['pnl_all'])} all-time."
+        s = f"{name}: {d.lower()} {what} for {size}."
+    tail = {0: "Risk looks low.", 1: "Some warning signs, be careful with size.",
+            2: "Several red flags. Risky to copy."}[level]
+    if snap["pnl_all"] < 0 and KEY != MY_KEY:
+        tail += f" Heads up: this wallet is {usd(snap['pnl_all'])} all-time."
     return f"{s} {tail}"
 
 
@@ -429,34 +474,34 @@ def check_trades(state):
         realized = sum(v["pnl"] for _, v in groups)
         lines = [f"🗂 <b>HOURLY DIGEST · {len(groups)} moves</b>", sub(ws, WALLET), LINE]
         for (coin, d), v in groups:
-            icon, head, _ = describe(d, coin, v, snap)
-            words = head.split()
-            pretty = " ".join(w.capitalize() for w in words[:-1]) + " " + words[-1]
-            lines.append(f"{icon} {pretty} · <b>{usd(v['ntl'])}</b> @ {px(v['ntl']/v['sz'])}"
-                         + (f" · {usd(v['pnl'])}" if "Close" in d or ">" in d else ""))
+            icon, _, _, verb = describe(d, coin, v, snap)
+            res = ""
+            if "Close" in d or ">" in d:
+                res = f" · {'profit' if v['pnl'] >= 0 else 'loss'} {usd(abs(v['pnl']))}"
+            lines.append(f"{icon} {verb} <b>{usd(v['ntl'])}</b> of {asset(coin)} at {px(v['ntl']/v['sz'])}{res}")
         lines += [LINE, field("💰", "Account", usd(snap["acct"])), field("📆", "30d PnL", usd(snap["pnl_month"]))]
-        coins = sorted({c for (c, _), _ in groups})
-        lines.append(key_info(f"{who(ws)} made {len(groups)} moves in {', '.join(coins)} this hour, "
-                              f"realizing {usd(realized)}."))
+        coins = sorted({asset(c) for (c, _), _ in groups})
+        lines.append(key_info(f"{who(ws)} made {len(groups)} moves this hour ({', '.join(coins)}). "
+                              f"Cashed-out result: {usd(realized)}."))
         lines.append(footer())
         send("\n".join(lines), buttons(WALLET))
         ws["last_fill_ms"] = max(f["time"] for f in fills)
         return
     for (coin, d), v in groups:
-        icon, head, meaning = describe(d, coin, v, snap)
+        icon, head, meaning, _ = describe(d, coin, v, snap)
         level, flags, facts = risk_read(snap, coin)
         avg = v["ntl"] / v["sz"]
-        szs = f"{v['sz']:,.0f}" if v["sz"] >= 100 else f"{v['sz']:,.4f}"
+        closing = d.startswith("Close")
         lines = [f"{icon} <b>{head}</b>", sub(ws, WALLET), f"<i>{meaning}</i>", LINE,
-                 field("💵", "Size", f"{usd(v['ntl'])}") + f"  ({szs} {coin})",
-                 field("🎯", "Price", px(avg))]
+                 field("💵", "Amount", usd(v["ntl"])),
+                 field("🏷", "Sold at" if closing else "Price", px(avg))]
         if "mid" in facts:
             lines[-1] += f"  · now {px(facts['mid'])} ({pct((facts['mid'] / avg - 1) * 100)})"
-        if facts.get("lev") and not d.startswith("Close"):
-            lines.append(field("⚖️", "Leverage", f"{facts['lev']}x"))
-        if "Close" in d or ">" in d:
+        if facts.get("lev") and not closing:
+            lines.append(field("⚖️", "Leverage", f"{facts['lev']}x") + f"  (gains and losses ×{facts['lev']})")
+        if closing or ">" in d:
             res = v["pnl"]
-            lines.append(field("✅" if res >= 0 else "❌", "Realized", usd(res)))
+            lines.append(field("✅" if res >= 0 else "❌", "Profit" if res >= 0 else "Loss", usd(abs(res))))
         lines += [LINE, f"🛡 <b>Risk: {RISK[level]}</b>"] + flags
         lines += [key_info(trade_summary(ws, d, coin, v, level, facts, snap)), footer()]
         send("\n".join(lines), buttons(WALLET, coin))
@@ -467,9 +512,10 @@ def pos_line(p):
     long = float(p["szi"]) > 0
     upnl = float(p["unrealizedPnl"])
     liq = p.get("liquidationPx")
-    return (f"{'🟢' if long else '🔴'} <b>{'Long' if long else 'Short'} {p['coin']}</b> {usd(p['positionValue'])}"
-            f" · {p['leverage']['value']}x · entry {px(p['entryPx'])}\n"
-            f"     {'📈' if upnl >= 0 else '📉'} uPnL <b>{usd(upnl)}</b>" + (f" · liq {px(liq)}" if liq else ""))
+    return (f"{'🟢' if long else '🔴'} <b>{asset(p['coin'])}</b> · {usd(p['positionValue'])} betting {'UP' if long else 'DOWN'}"
+            f" · {p['leverage']['value']}x\n"
+            f"     {'📈' if upnl >= 0 else '📉'} {'Up' if upnl >= 0 else 'Down'} <b>{usd(abs(upnl))}</b> so far · in at {px(p['entryPx'])}"
+            + (f" · wiped out at {px(liq)}" if liq else ""))
 
 
 def daily(state):
@@ -487,18 +533,20 @@ def daily(state):
              field("📅", "24h", usd(snap["pnl_day"])) + f"  ·  7d <b>{usd(snap['pnl_week'])}</b>",
              field("🗓", "30d", usd(snap["pnl_month"])) + f"  ·  all-time <b>{usd(snap['pnl_all'])}</b>",
              LINE, "<b>🔁 Trades (24h)</b>"]
-    lines += [f"• {d} {c} · {usd(v['ntl'])}" + (f" · {usd(v['pnl'])}" if "Close" in d else "")
+    lines += [f"{describe(d, c, v, snap)[0]} {describe(d, c, v, snap)[3]} {usd(v['ntl'])} of {asset(c)}"
+              + (f" · {'profit' if v['pnl'] >= 0 else 'loss'} {usd(abs(v['pnl']))}" if "Close" in d else "")
               for (c, d), v in g.items()] or ["• No trades"]
-    lines += ["", "<b>📂 Open positions</b>"]
+    lines += ["", "<b>📂 Bets still open</b>"]
     lines += [pos_line(p) for p in snap["positions"]] or ["• None"]
     pos = snap["positions"]
     if pos:
         big = max(pos, key=lambda p: abs(float(p["positionValue"])))
-        summ = (f"{who(ws)} is {'long' if float(big['szi']) > 0 else 'short'} {big['coin']} "
-                f"({usd(big['positionValue'])}, uPnL {usd(big['unrealizedPnl'])}). ")
+        up = float(big["unrealizedPnl"])
+        summ = (f"Biggest bet: {usd(big['positionValue'])} on {asset(big['coin'])} going "
+                f"{'UP' if float(big['szi']) > 0 else 'DOWN'}, {'up' if up >= 0 else 'down'} {usd(abs(up))} so far. ")
     else:
-        summ = f"{who(ws)} has no open positions. "
-    summ += (f"{len(fills)} fills in the last 24h, realized {usd(realized)}." if fills else "No trades in the last 24h.")
+        summ = f"{who(ws)} has no open bets. "
+    summ += (f"{len(g)} trades in the last 24h, cashed-out result {usd(realized)}." if fills else "No trades in the last 24h.")
     lines += [LINE, key_info(summ), footer()]
     send("\n".join(lines), buttons(WALLET))
 
@@ -517,7 +565,7 @@ NICKNAMES = {
     "0x2312171890250347dbf1b082bdf7950504909e92": ("🏅", "The Veteran", "Pro C"),
     "0xf97ad6704baec104d00b88e0c157e2b7b3a1ddd1": ("🏅", "Loco the Chip Maniac", "Pro D"),
     "0x8af700ba841f30e0a3fcb0ee4c4a9d223e1efa05": ("🏅", "The Emperor", "Pro E"),
-    "me": ("👤", "You", ""),
+    "me": ("👛", "Mini Wallet", "your wallet"),
 }
 
 
@@ -639,7 +687,7 @@ def weekly(state):
         cap.append(f"💀 {ranked[-1]['name']}  <b>{ranked[-1]['ret']:+.1f}%</b> ({usd(ranked[-1]['w'])})")
     me = next((r for r in rows if r["key"] == MY_KEY), None)
     if me:
-        cap += ["", f"👤 You: <b>{me['ret']:+.1f}%</b> ({usd(me['w'])}) this week · balance {usd(me['acct'])}"]
+        cap += ["", f"👛 Mini Wallet: <b>{me['ret']:+.1f}%</b> ({usd(me['w'])}) this week · balance {usd(me['acct'])}"]
     try:
         send_photo(weekly_chart(rows), "\n".join(cap))
     except Exception as e:  # no matplotlib / photo failed: still send the text
@@ -652,17 +700,17 @@ def weekly(state):
     coins = defaultdict(int)
     for _, p in bets:
         coins[p["coin"]] += 1
-    mood = "LONG 🐂" if longs > shorts * 1.5 else "SHORT 🐻" if shorts > longs * 1.5 else "split ⚖️"
+    mood = "betting UP 🐂" if longs > shorts * 1.5 else "betting DOWN 🐻" if shorts > longs * 1.5 else "split ⚖️"
     lines = ["📂 <b>OPEN BETS RIGHT NOW</b>", LINE,
-             f"🟢 <b>{longs}</b> longs · 🔴 <b>{shorts}</b> shorts → crowd is <b>{mood}</b>"]
+             f"🟢 <b>{longs}</b> betting UP · 🔴 <b>{shorts}</b> betting DOWN → crowd is <b>{mood}</b>"]
     if coins:
-        lines.append("🔥 Most held: " + " · ".join(f"{c} ({n})" for c, n in
+        lines.append("🔥 Most popular: " + " · ".join(f"{asset(c)} ({n})" for c, n in
                                                    sorted(coins.items(), key=lambda kv: -kv[1])[:3]))
     lines += ["", "<b>Biggest bets</b>"]
     for r, p in sorted(bets, key=lambda rp: -abs(float(rp[1]["positionValue"])))[:5]:
         long = float(p["szi"]) > 0
-        lines.append(f"{'🟢' if long else '🔴'} {r['name']} · {p['coin']} {'long' if long else 'short'} "
-                     f"<b>{usd(p['positionValue'])}</b> ({p['leverage']['value']}x)")
+        lines.append(f"{'🟢' if long else '🔴'} {r['name']} · <b>{usd(p['positionValue'])}</b> on {asset(p['coin'])} "
+                     f"going {'UP' if long else 'DOWN'} ({p['leverage']['value']}x)")
     if not bets:
         lines.append("Nobody has an open position.")
     lines += [LINE, footer()]
