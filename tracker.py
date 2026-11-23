@@ -58,18 +58,6 @@ def info(body):
         return json.load(r)
 
 
-def send(text):
-    if DRY:
-        print(text + "\n" + "-" * 40)
-        return
-    tok, chat = os.environ["TELEGRAM_TOKEN"], os.environ["TELEGRAM_CHAT_ID"]
-    body = json.dumps({"chat_id": chat, "text": text, "parse_mode": "HTML",
-                       "disable_web_page_preview": True}).encode()
-    urllib.request.urlopen(urllib.request.Request(
-        f"https://api.telegram.org/bot{tok}/sendMessage", body,
-        {"Content-Type": "application/json"}), timeout=30).read()
-
-
 def load_state():
     try:
         return json.load(open(STATE))
@@ -103,57 +91,6 @@ def wallets(state):
 
 def short(a):
     return a[:6] + "…" + a[-4:]
-
-
-def check_money(state, w):
-    """Alert on money moving in/out, liquidations, and the account being emptied."""
-    me = WALLET
-    ws = state["wallets"][KEY]
-    ups = info({"type": "userNonFundingLedgerUpdates", "user": me,
-                "startTime": ws["last_ledger_ms"] + 1})
-    tag = f"[{ws['label']} {short(me)}]"
-    for u in sorted(ups, key=lambda u: u["time"]):
-        d = u["delta"]; t = d["type"]
-        amt = float(d.get("usdcValue") or d.get("usdc") or d.get("amount") or 0)
-        if t == "liquidation":
-            send(f"🚨 <b>LIQUIDATED</b> {tag}\nPositions were force-closed by the exchange.")
-        elif t == "withdraw" and amt >= MIN_MOVE:
-            send(f"💸 <b>WITHDRAWAL {usd(amt)}</b> {tag}\nMoney left Hyperliquid to an outside wallet/exchange.\n"
-                 "If he starts a new wallet, it will usually show up with a deposit of a similar amount.")
-        elif t in ("send", "spotTransfer") and amt >= MIN_MOVE:
-            dest, src = d.get("destination", "").lower(), d.get("user", "").lower()
-            if src == me and dest != me:
-                if dest.startswith(SYSTEM_PREFIX):
-                    send(f"💸 <b>MOVED {usd(amt)} OFF HYPERLIQUID</b> {tag}\nSent to the HyperEVM bridge "
-                         "(this is how he moved funds out of his old wallet on Sep 17).")
-                elif dest in state["wallets"]:
-                    send(f"↔️ <b>{usd(amt)} moved</b> {tag} → {state['wallets'][dest]['label']} {short(dest)}")
-                elif not ws.get("follow", True):
-                    send(f"↗️ <b>{usd(amt)} sent out</b> {tag} → {short(dest)}\n"
-                         f"https://hypurrscan.io/address/{dest}")
-                else:
-                    now = int(time.time() * 1000)
-                    state["wallets"][dest] = {"label": f"followed from {short(me)}", "last_fill_ms": now,
-                                              "last_ledger_ms": now, "peak": 0}
-                    send(f"🧭 <b>{usd(amt)} SENT TO A NEW WALLET</b> {tag}\n→ {dest}\n"
-                         f"✅ I'm now tracking this wallet automatically.\nhttps://hypurrscan.io/address/{dest}")
-            elif dest == me:
-                who = state["wallets"].get(src, {}).get("label", "unknown")
-                if src not in state["wallets"]:
-                    send(f"💰 <b>{usd(amt)} ADDED</b> {tag} from {short(src)} ({who})")
-        elif t == "deposit" and amt >= MIN_MOVE:
-            send(f"💰 <b>DEPOSIT {usd(amt)}</b> {tag}\nNew money added from outside Hyperliquid.")
-    if ups:
-        ws["last_ledger_ms"] = max(u["time"] for u in ups)
-    # emptied / big drawdown check
-    acct = equity(dict(info({"type": "portfolio", "user": me})))
-    ws["peak"] = max(ws.get("peak", 0), acct)
-    if ws["peak"] >= 1e6 and acct < 0.1 * ws["peak"] and not ws.get("emptied_alerted"):
-        send(f"⚠️ <b>WALLET EMPTIED</b> {tag}\nNow {usd(acct)}, down from {usd(ws['peak'])}. "
-             "Check the alerts above to see where the money went.")
-        ws["emptied_alerted"] = True
-    elif acct >= 0.5 * ws["peak"]:
-        ws["emptied_alerted"] = False
 
 
 def save_state(s):
@@ -206,32 +143,6 @@ def snapshot():
     }
 
 
-def risk_read(snap, coin):
-    """Rule-based, informational risk read. Not financial advice."""
-    flags, pos = [], next((p for p in snap["positions"] if p["coin"] == coin), None)
-    acct = snap["acct"] or 1
-    eff_lev = snap["ntl"] / acct
-    if pos:
-        mid = float(snap["mids"].get(coin, pos["entryPx"]))
-        liq = pos.get("liquidationPx")
-        if liq:
-            dist = abs(mid - float(liq)) / mid * 100
-            lvl = "🔴 tight" if dist < 15 else "🟡 moderate" if dist < 35 else "🟢 wide"
-            flags.append(f"Liquidation {float(liq):,.2f}, {dist:.0f}% away ({lvl})")
-        share = float(pos["positionValue"]) / max(snap["ntl"], 1) * 100
-        if share > 80:
-            flags.append(f"Concentrated: {share:.0f}% of exposure in {coin}")
-    flags.append(f"Effective leverage {eff_lev:.1f}x on {usd(acct)} account"
-                 + (" (🔴 high)" if eff_lev > 5 else " (🟡)" if eff_lev > 2.5 else " (🟢)"))
-    rec = "📉 losing" if snap["pnl_all"] < 0 else "📈 profitable"
-    flags.append(f"Wallet record: {rec} all-time ({usd(snap['pnl_all'])}), "
-                 f"30d {usd(snap['pnl_month'])}")
-    reds = sum("🔴" in f for f in flags) + (snap["pnl_all"] < 0)
-    verdict = ("High risk to copy" if reds >= 2 else "Elevated risk" if reds == 1
-               else "Risk looks contained")
-    return verdict, flags
-
-
 def group(fills):
     g = defaultdict(lambda: {"sz": 0.0, "ntl": 0.0, "pnl": 0.0, "fee": 0.0, "t": 0, "start": None})
     for f in sorted(fills, key=lambda f: f["time"]):
@@ -274,6 +185,197 @@ def describe(d, coin, v, snap):
     return ("🔵", f"{d.upper()} {coin}", "Spot trade" if d in ("Buy", "Sell") else d)
 
 
+# ───────────────────────── Message design ─────────────────────────
+# Every alert follows the same layout:
+#   ICON  TITLE                      ← what happened, in capitals
+#   label · 0xabc…1234               ← whose wallet
+#   ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+#   emoji  Field   value             ← the numbers
+#   ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+#   ⚡ Key info (quote block)         ← one-glance summary
+#   footer + buttons (wallet / chart)
+LINE = "┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈"
+
+
+def madrid_now():
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("Europe/Madrid"))
+    except Exception:
+        return datetime.now(timezone.utc)
+
+
+def who(ws):
+    """Label without its emoji badge, for use inside sentences."""
+    lbl = ws.get("label", "wallet")
+    return {"main wallet": "The fund manager", "old wallet": "The fund manager (old wallet)",
+            "👤 You": "You"}.get(lbl, lbl.lstrip("⭐🏅👤 ").split(" · ")[0])
+
+
+def sub(ws, addr):
+    lbl = {"main wallet": "💼 Fund manager", "old wallet": "💼 Fund manager · old wallet"}.get(ws["label"], ws["label"])
+    return f"{lbl} · <code>{short(addr)}</code>"
+
+
+def field(emoji, name, value):
+    return f"{emoji} {name}: <b>{value}</b>"
+
+
+def key_info(text):
+    return f"<blockquote>⚡ <b>Key info</b>\n{text}</blockquote>"
+
+
+def footer():
+    return f"<i>Not financial advice · {madrid_now():%H:%M} Madrid</i>"
+
+
+def pct(x):
+    return f"{x:+.1f}%"
+
+
+def buttons(addr, coin=None):
+    row = [{"text": "🔍 Wallet", "url": f"https://hypurrscan.io/address/{addr}"}]
+    if coin:
+        row.append({"text": f"📈 {coin} chart", "url": f"https://app.hyperliquid.xyz/trade/{coin}"})
+    return [row]
+
+
+def send(text, kb=None):
+    if DRY:
+        extra = ("\n[" + "] [".join(b["text"] for r in kb for b in r) + "]") if kb else ""
+        print(text + extra + "\n" + "-" * 40)
+        return
+    tok, chat = os.environ["TELEGRAM_TOKEN"], os.environ["TELEGRAM_CHAT_ID"]
+    msg = {"chat_id": chat, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True}
+    if kb:
+        msg["reply_markup"] = {"inline_keyboard": kb}
+    urllib.request.urlopen(urllib.request.Request(
+        f"https://api.telegram.org/bot{tok}/sendMessage", json.dumps(msg).encode(),
+        {"Content-Type": "application/json"}), timeout=30).read()
+
+
+def risk_read(snap, coin):
+    """Rule-based, informational risk read. Not financial advice.
+    Returns (level 0-2, flags, facts)."""
+    flags, facts = [], {}
+    pos = next((p for p in snap["positions"] if p["coin"] == coin), None)
+    acct = snap["acct"] or 1
+    eff = snap["ntl"] / acct
+    reds = 0
+    if pos:
+        mid = float(snap["mids"].get(coin, pos["entryPx"]))
+        facts["mid"] = mid
+        facts["lev"] = pos["leverage"]["value"]
+        liq = pos.get("liquidationPx")
+        if liq:
+            dist = abs(mid - float(liq)) / mid * 100
+            facts["dist"] = dist
+            dot = "🔴" if dist < 15 else "🟡" if dist < 35 else "🟢"
+            reds += dist < 15
+            flags.append(f"{dot} Liquidation {px(liq)} ({dist:.0f}% away)")
+        share = float(pos["positionValue"]) / max(snap["ntl"], 1) * 100
+        if share > 80 and len(snap["positions"]) == 1:
+            flags.append(f"🟡 All-in: 100% of exposure in {coin}")
+    dot = "🔴" if eff > 5 else "🟡" if eff > 2.5 else "🟢"
+    reds += eff > 5
+    flags.append(f"{dot} Leverage {eff:.1f}x on {usd(acct)}")
+    dot = "🔴" if snap["pnl_all"] < 0 else "🟢"
+    reds += snap["pnl_all"] < 0
+    flags.append(f"{dot} Track record {usd(snap['pnl_all'])} all-time · {usd(snap['pnl_month'])} 30d")
+    facts["eff"] = eff
+    return min(reds, 2), flags, facts
+
+
+RISK = ["🟢 Contained", "🟡 Elevated", "🔴 High"]
+
+
+def trade_summary(ws, d, coin, v, level, facts, snap):
+    name = who(ws)
+    size = usd(v["ntl"])
+    lev = facts.get("lev")
+    levs = f" at {lev}x" if lev else ""
+    if d.startswith("Open"):
+        side = "long" if "Long" in d else "short"
+        verb = "added to a" if (v["start"] or 0) else "opened a"
+        s = f"{name} {verb} {size} {coin} {side}{levs}."
+        if "dist" in facts:
+            s += f" Liquidation is {facts['dist']:.0f}% away."
+    elif d.startswith("Close"):
+        side = "long" if "Long" in d else "short"
+        res = "profit" if v["pnl"] >= 0 else "loss"
+        s = (f"{name} closed {'part of ' if v.get('partial') else ''}a {side} on {coin} for a {usd(abs(v['pnl']))} {res}. "
+             f"This is an exit, not a new {'short' if side == 'long' else 'long'}.")
+    elif ">" in d:
+        s = f"{name} flipped {coin} to {'SHORT' if d.endswith('Short') else 'LONG'} with {size}{levs}."
+    else:
+        s = f"{name}: {d} {coin} for {size}."
+    tail = {0: "Risk looks contained.", 1: "Some risk flags, size carefully.",
+            2: "Several red flags, high risk to copy."}[level]
+    if snap["pnl_all"] < 0 and ws.get("label") != "👤 You":
+        tail += f" Note: this wallet is {usd(snap['pnl_all'])} all-time."
+    return f"{s} {tail}"
+
+
+def check_money(state, w):
+    """Alert on money moving in/out, liquidations, and the account being emptied."""
+    me = WALLET
+    ws = state["wallets"][KEY]
+    ups = info({"type": "userNonFundingLedgerUpdates", "user": me,
+                "startTime": ws["last_ledger_ms"] + 1})
+    head = lambda icon, title: [f"{icon} <b>{title}</b>", sub(ws, me), LINE]
+    out = lambda lines, summary, kb=None: send("\n".join(lines + [LINE, key_info(summary), footer()]),
+                                              kb or buttons(me))
+    for u in sorted(ups, key=lambda u: u["time"]):
+        d = u["delta"]; t = d["type"]
+        amt = float(d.get("usdcValue") or d.get("usdc") or d.get("amount") or 0)
+        if t == "liquidation":
+            out(head("🚨", "LIQUIDATED") + ["💀 Positions were force-closed by the exchange."],
+                f"{who(ws)} got liquidated. Any copied positions in the same coins are in danger.")
+        elif t == "withdraw" and amt >= MIN_MOVE:
+            out(head("💸", f"WITHDRAWAL · {usd(amt)}") + [field("📤", "Amount", usd(amt)),
+                "🏦 Destination: outside Hyperliquid"],
+                f"{who(ws)} pulled {usd(amt)} off the exchange. A new wallet often appears with a similar deposit.")
+        elif t in ("send", "spotTransfer") and amt >= MIN_MOVE:
+            dest, src = d.get("destination", "").lower(), d.get("user", "").lower()
+            if src == me and dest != me:
+                if dest.startswith(SYSTEM_PREFIX):
+                    out(head("💸", f"MOVED OFF HYPERLIQUID · {usd(amt)}") + [field("📤", "Amount", usd(amt)),
+                        "🌉 Via the HyperEVM bridge"],
+                        f"{who(ws)} moved {usd(amt)} off Hyperliquid, the same way the fund manager left his old wallet on Sep 17.")
+                elif dest in state["wallets"]:
+                    out(head("↔️", f"INTERNAL MOVE · {usd(amt)}") + [
+                        f"➡️ To: <b>{state['wallets'][dest]['label']}</b> <code>{short(dest)}</code>"],
+                        f"Money moved between two wallets you already track. Nothing new to follow.")
+                elif not ws.get("follow", True):
+                    out(head("↗️", f"SENT OUT · {usd(amt)}") + [f"➡️ To: <code>{dest}</code>"],
+                        f"{who(ws)} sent {usd(amt)} to another wallet (not auto-followed for this trader).",
+                        buttons(dest))
+                else:
+                    now = int(time.time() * 1000)
+                    state["wallets"][dest] = {"label": f"🧭 Followed from {short(me)}", "last_fill_ms": now,
+                                              "last_ledger_ms": now, "peak": 0}
+                    out(head("🧭", f"NEW WALLET FOUND · {usd(amt)}") + [f"➡️ To: <code>{dest}</code>",
+                        "✅ Now tracking it automatically"],
+                        f"{who(ws)} sent {usd(amt)} to a new wallet. You'll get its trades from now on.",
+                        buttons(dest))
+            elif dest == me and src not in state["wallets"]:
+                out(head("💰", f"FUNDS ADDED · {usd(amt)}") + [f"⬅️ From: <code>{short(src)}</code>"],
+                    f"{who(ws)} topped up by {usd(amt)}. More capital often means bigger positions next.")
+        elif t == "deposit" and amt >= MIN_MOVE:
+            out(head("💰", f"DEPOSIT · {usd(amt)}") + [field("📥", "Amount", usd(amt))],
+                f"{who(ws)} brought {usd(amt)} of new money onto Hyperliquid.")
+    if ups:
+        ws["last_ledger_ms"] = max(u["time"] for u in ups)
+    acct = equity(dict(info({"type": "portfolio", "user": me})))
+    ws["peak"] = max(ws.get("peak", 0), acct)
+    if ws["peak"] >= 1e6 and acct < 0.1 * ws["peak"] and not ws.get("emptied_alerted"):
+        out(head("⚠️", "WALLET EMPTIED") + [field("📉", "Now", usd(acct)), field("🏔", "Peak", usd(ws["peak"]))],
+            f"{who(ws)} drained this wallet ({usd(acct)} left of {usd(ws['peak'])}). Check the alerts above for where it went.")
+        ws["emptied_alerted"] = True
+    elif acct >= 0.5 * ws["peak"]:
+        ws["emptied_alerted"] = False
+
+
 def check_trades(state):
     ws = state["wallets"][KEY]
     if ws.get("batch") and time.time() - ws.get("last_batch", 0) < 3600:
@@ -284,30 +386,52 @@ def check_trades(state):
     if not fills:
         return
     snap = snapshot()
+    groups = sorted(group(fills).items(), key=lambda kv: kv[1]["t"])
     if ws.get("batch"):
-        lines = [f"🗂 <b>Hourly digest</b> [{ws['label']} {short(WALLET)}]: {len(fills)} fills"]
-        for (coin, d), v in sorted(group(fills).items(), key=lambda kv: kv[1]["t"]):
+        realized = sum(v["pnl"] for _, v in groups)
+        lines = [f"🗂 <b>HOURLY DIGEST · {len(groups)} moves</b>", sub(ws, WALLET), LINE]
+        for (coin, d), v in groups:
             icon, head, _ = describe(d, coin, v, snap)
-            lines.append(f"{icon} {head}: {usd(v['ntl'])} @ {px(v['ntl']/v['sz'])}"
-                         + (f", PnL {usd(v['pnl'])}" if "Close" in d or ">" in d else ""))
-        lines += ["", f"Account {usd(snap['acct'])} · 30d {usd(snap['pnl_month'])} · all-time {usd(snap['pnl_all'])}"]
-        send("\n".join(lines))
+            words = head.split()
+            pretty = " ".join(w.capitalize() for w in words[:-1]) + " " + words[-1]
+            lines.append(f"{icon} {pretty} · <b>{usd(v['ntl'])}</b> @ {px(v['ntl']/v['sz'])}"
+                         + (f" · {usd(v['pnl'])}" if "Close" in d or ">" in d else ""))
+        lines += [LINE, field("💰", "Account", usd(snap["acct"])), field("📆", "30d PnL", usd(snap["pnl_month"]))]
+        coins = sorted({c for (c, _), _ in groups})
+        lines.append(key_info(f"{who(ws)} made {len(groups)} moves in {', '.join(coins)} this hour, "
+                              f"realizing {usd(realized)}."))
+        lines.append(footer())
+        send("\n".join(lines), buttons(WALLET))
         ws["last_fill_ms"] = max(f["time"] for f in fills)
         return
-    for (coin, d), v in sorted(group(fills).items(), key=lambda kv: kv[1]["t"]):
+    for (coin, d), v in groups:
         icon, head, meaning = describe(d, coin, v, snap)
-        verdict, flags = risk_read(snap, coin)
-        szs = f"{v['sz']:,.0f}" if v['sz'] >= 100 else f"{v['sz']:,.4f}"
-        lbl = state["wallets"][KEY]["label"]
-        lines = [f"{icon} <b>{head}</b>  [{lbl} {short(WALLET)}]", f"<i>{meaning}</i>",
-                 f"Size {szs} {coin} ≈ {usd(v['ntl'])} @ avg {px(v['ntl']/v['sz'])}"]
+        level, flags, facts = risk_read(snap, coin)
+        avg = v["ntl"] / v["sz"]
+        szs = f"{v['sz']:,.0f}" if v["sz"] >= 100 else f"{v['sz']:,.4f}"
+        lines = [f"{icon} <b>{head}</b>", sub(ws, WALLET), f"<i>{meaning}</i>", LINE,
+                 field("💵", "Size", f"{usd(v['ntl'])}") + f"  ({szs} {coin})",
+                 field("🎯", "Price", px(avg))]
+        if "mid" in facts:
+            lines[-1] += f"  · now {px(facts['mid'])} ({pct((facts['mid'] / avg - 1) * 100)})"
+        if facts.get("lev") and not d.startswith("Close"):
+            lines.append(field("⚖️", "Leverage", f"{facts['lev']}x"))
         if "Close" in d or ">" in d:
-            lines.append(f"Realized PnL: <b>{usd(v['pnl'])}</b>")
-        lines += ["", f"<b>Risk read: {verdict}</b>"] + [f"• {f}" for f in flags]
-        lines += ["", "<i>Informational only, not financial advice.</i>",
-                  f"https://hypurrscan.io/address/{WALLET}"]
-        send("\n".join(lines))
-    state["wallets"][KEY]["last_fill_ms"] = max(f["time"] for f in fills)
+            res = v["pnl"]
+            lines.append(field("✅" if res >= 0 else "❌", "Realized", usd(res)))
+        lines += [LINE, f"🛡 <b>Risk: {RISK[level]}</b>"] + flags
+        lines += [key_info(trade_summary(ws, d, coin, v, level, facts, snap)), footer()]
+        send("\n".join(lines), buttons(WALLET, coin))
+    ws["last_fill_ms"] = max(f["time"] for f in fills)
+
+
+def pos_line(p):
+    long = float(p["szi"]) > 0
+    upnl = float(p["unrealizedPnl"])
+    liq = p.get("liquidationPx")
+    return (f"{'🟢' if long else '🔴'} <b>{'Long' if long else 'Short'} {p['coin']}</b> {usd(p['positionValue'])}"
+            f" · {p['leverage']['value']}x · entry {px(p['entryPx'])}\n"
+            f"     {'📈' if upnl >= 0 else '📉'} uPnL <b>{usd(upnl)}</b>" + (f" · liq {px(liq)}" if liq else ""))
 
 
 def daily(state):
@@ -317,41 +441,46 @@ def daily(state):
     snap = snapshot()
     if snap["acct"] < 1 and not fills:
         return
-    lines = [f"📊 <b>Daily summary</b> {datetime.now(timezone.utc):%d %b %Y} [{state['wallets'][KEY]['label']} {short(WALLET)}]",
-             f"Account value {usd(snap['acct'])} · 24h PnL {usd(snap['pnl_day'])}",
-             f"7d {usd(snap['pnl_week'])} · 30d {usd(snap['pnl_month'])} · all-time {usd(snap['pnl_all'])}",
-             "", "<b>Trades (24h)</b>"]
+    ws = state["wallets"][KEY]
     g = group(fills)
-    lines += [f"• {d} {c}: {usd(v['ntl'])}" + (f", PnL {usd(v['pnl'])}" if "Close" in d else "")
+    realized = sum(v["pnl"] for v in g.values())
+    lines = [f"☀️ <b>DAILY BRIEF · {madrid_now():%a %d %b}</b>", sub(ws, WALLET), LINE,
+             field("💰", "Account", usd(snap["acct"])),
+             field("📅", "24h", usd(snap["pnl_day"])) + f"  ·  7d <b>{usd(snap['pnl_week'])}</b>",
+             field("🗓", "30d", usd(snap["pnl_month"])) + f"  ·  all-time <b>{usd(snap['pnl_all'])}</b>",
+             LINE, "<b>🔁 Trades (24h)</b>"]
+    lines += [f"• {d} {c} · {usd(v['ntl'])}" + (f" · {usd(v['pnl'])}" if "Close" in d else "")
               for (c, d), v in g.items()] or ["• No trades"]
-    lines += ["", "<b>Open positions</b>"]
-    for p in snap["positions"]:
-        side = "Long" if float(p["szi"]) > 0 else "Short"
-        liq = p.get("liquidationPx")
-        lines.append(f"• {side} {p['coin']} {usd(p['positionValue'])} @ {px(p['entryPx'])}, "
-                     f"{p['leverage']['value']}x, uPnL {usd(p['unrealizedPnl'])}"
-                     + (f", liq {px(liq)}" if liq else ""))
-    if not snap["positions"]:
-        lines.append("• None")
-    send("\n".join(lines))
+    lines += ["", "<b>📂 Open positions</b>"]
+    lines += [pos_line(p) for p in snap["positions"]] or ["• None"]
+    pos = snap["positions"]
+    if pos:
+        big = max(pos, key=lambda p: abs(float(p["positionValue"])))
+        summ = (f"{who(ws)} is {'long' if float(big['szi']) > 0 else 'short'} {big['coin']} "
+                f"({usd(big['positionValue'])}, uPnL {usd(big['unrealizedPnl'])}). ")
+    else:
+        summ = f"{who(ws)} has no open positions. "
+    summ += (f"{len(fills)} fills in the last 24h, realized {usd(realized)}." if fills else "No trades in the last 24h.")
+    lines += [LINE, key_info(summ), footer()]
+    send("\n".join(lines), buttons(WALLET))
 
 
 def weekly(state):
     """One report across every tracked wallet: value, PnL, activity, open positions."""
+    global WALLET, KEY
     now = int(time.time() * 1000)
-    rows, total_pnl_w = [], 0.0
+    rows = []
     for key, ws in list(state["wallets"].items()):
         addr = os.environ.get("MY_WALLET", "").strip().lower() if key == MY_KEY else key
         if not addr:
             continue
-        global WALLET, KEY
         WALLET, KEY = addr, key
         try:
             snap = snapshot()
             fills = info({"type": "userFillsByTime", "user": addr,
                           "startTime": now - 7 * 86_400_000, "aggregateByTime": True})
         except Exception as e:
-            print(f"weekly error on {key[:10]}: {e!r}", file=sys.stderr)
+            print(f"weekly error on {ws.get('label', '?')}: {e!r}", file=sys.stderr)
             continue
         if snap["acct"] < 1 and not fills:
             continue
@@ -360,32 +489,49 @@ def weekly(state):
         best = max(g.items(), key=lambda kv: kv[1]["pnl"], default=None)
         worst = min(g.items(), key=lambda kv: kv[1]["pnl"], default=None)
         pos = sorted(snap["positions"], key=lambda p: -abs(float(p["positionValue"])))
-        lines = [f"<b>{ws['label']}</b> {short(addr) if key != MY_KEY else ''}",
-                 f"Value {usd(snap['acct'])} · 7d {usd(snap['pnl_week'])} · 30d {usd(snap['pnl_month'])} · all-time {usd(snap['pnl_all'])}",
-                 f"Trades this week: {len(fills)} fills, realized {usd(realized)}"]
+        trend = "📈" if snap["pnl_week"] >= 0 else "📉"
+        name = {"main wallet": "💼 Fund manager", "old wallet": "💼 Fund manager (old)"}.get(ws["label"], ws["label"])
+        lines = [f"{trend} <b>{name}</b>" + (f" <code>{short(addr)}</code>" if key != MY_KEY else ""),
+                 f"7d <b>{usd(snap['pnl_week'])}</b> · 30d {usd(snap['pnl_month'])} · all {usd(snap['pnl_all'])} · value {usd(snap['acct'])}",
+                 f"🔁 {len(fills)} fills · realized {usd(realized)}"]
         if best and best[1]["pnl"] > 0:
-            lines.append(f"Best: {best[0][1]} {best[0][0]} {usd(best[1]['pnl'])}")
+            lines[-1] += f" · best {best[0][0]} {usd(best[1]['pnl'])}"
         if worst and worst[1]["pnl"] < 0:
-            lines.append(f"Worst: {worst[0][1]} {worst[0][0]} {usd(worst[1]['pnl'])}")
-        for p in pos[:4]:
-            side = "Long" if float(p["szi"]) > 0 else "Short"
-            lines.append(f"• {side} {p['coin']} {usd(p['positionValue'])} @ {px(p['entryPx'])}, "
-                         f"{p['leverage']['value']}x, uPnL {usd(p['unrealizedPnl'])}")
-        if len(pos) > 4:
-            lines.append(f"• +{len(pos) - 4} more positions")
-        if not pos:
-            lines.append("• No open positions")
-        rows.append((snap["pnl_week"], "\n".join(lines)))
-    rows.sort(key=lambda r: -r[0])
-    header = [f"📅 <b>Weekly report</b> {datetime.now(timezone.utc):%d %b %Y} ({len(rows)} wallets, best 7d first)", ""]
-    msg = "\n".join(header)
-    for _, block in rows:  # Telegram caps messages at 4096 chars
-        if len(msg) + len(block) > 3800:
+            lines[-1] += f" · worst {worst[0][0]} {usd(worst[1]['pnl'])}"
+        for p in pos[:3]:
+            long = float(p["szi"]) > 0
+            lines.append(f"   {'🟢' if long else '🔴'} {'Long' if long else 'Short'} {p['coin']} "
+                         f"{usd(p['positionValue'])} · {p['leverage']['value']}x · uPnL {usd(p['unrealizedPnl'])}")
+        if len(pos) > 3:
+            lines.append(f"   +{len(pos) - 3} more")
+        rows.append({"w": snap["pnl_week"], "name": name, "text": "\n".join(lines), "pos": pos})
+    rows.sort(key=lambda r: -r["w"])
+    if not rows:
+        return
+    total = sum(r["w"] for r in rows if r["name"] != "👤 You")
+    up = sum(r["w"] > 0 for r in rows)
+    longs = sum(float(p["szi"]) > 0 for r in rows for p in r["pos"])
+    shorts = sum(float(p["szi"]) < 0 for r in rows for p in r["pos"])
+    coins = defaultdict(int)
+    for r in rows:
+        for p in r["pos"]:
+            coins[p["coin"]] += 1
+    top_coin = max(coins.items(), key=lambda kv: kv[1], default=None)
+    medal = ["🥇", "🥈", "🥉"]
+    podium = " · ".join(f"{medal[i]} {r['name']} {usd(r['w'])}" for i, r in enumerate(rows[:3]))
+    summ = (f"{up} of {len(rows)} wallets were green this week (tracked traders combined {usd(total)}). "
+            f"Positioning: {longs} long{'s' * (longs != 1)} vs {shorts} short{'s' * (shorts != 1)}"
+            + (f", most held coin {top_coin[0]} ({top_coin[1]} wallet{'s' * (top_coin[1] != 1)})." if top_coin else ".")
+            + f"\nTop 3: {podium}")
+    head = (f"📅 <b>WEEKLY REPORT · {madrid_now():%d %b %Y}</b>\n"
+            f"<i>{len(rows)} wallets, best week first</i>\n{LINE}\n{key_info(summ)}\n{LINE}\n")
+    msg = head
+    for r in rows:  # Telegram caps messages at 4096 chars
+        if len(msg) + len(r["text"]) > 3800:
             send(msg)
             msg = ""
-        msg += block + "\n\n"
-    msg += "<i>Informational only, not financial advice.</i>"
-    send(msg)
+        msg += r["text"] + "\n\n"
+    send(msg + footer())
 
 
 def weekly_due(st):
@@ -424,8 +570,40 @@ def run_once(st, force_daily=False, force_weekly=False):
     save_state(st)
 
 
+def preview(st):
+    """Send one example of every alert type using live data (state is not saved)."""
+    import copy
+    global WALLET, KEY, info
+    st = copy.deepcopy(st)
+    real_info = info
+    MAIN = "0xe81309ec9b79309e4d108ae3a92d1aa618cd6d74"
+    LOCO = "0xf97ad6704baec104d00b88e0c157e2b7b3a1ddd1"
+    send("👋 <b>PREVIEW</b>\nHere's one of each alert type, using real wallet data. "
+         "The money-movement alerts use example amounts.")
+    WALLET = KEY = MAIN
+    st["wallets"][MAIN]["last_fill_ms"] = 1794692400000  # Nov 14: SOL long opened, ETH long closed
+    check_trades(st)
+    WALLET = KEY = LOCO
+    st["wallets"][LOCO].update(last_batch=0, last_fill_ms=int(time.time() * 1000) - 6 * 3600_000)
+    check_trades(st)
+    fake = [{"time": 1, "delta": {"type": "send", "user": MAIN, "destination": "0x1111111111111111111111111111111111111111",
+                                  "usdcValue": "2500000"}},
+            {"time": 2, "delta": {"type": "withdraw", "usdc": "1500000"}}]
+    info = lambda b: fake if b["type"] == "userNonFundingLedgerUpdates" else real_info(b)
+    WALLET = KEY = MAIN
+    st["wallets"][MAIN]["last_ledger_ms"] = 0
+    check_money(st, MAIN)
+    st["wallets"].pop("0x1111111111111111111111111111111111111111", None)
+    info = real_info
+    daily(st)
+    weekly(st)
+
+
 if __name__ == "__main__":
     st = load_state()
+    if "--preview" in sys.argv:
+        preview(st)
+        sys.exit(0)
     minutes = int(sys.argv[sys.argv.index("--loop") + 1]) if "--loop" in sys.argv else 0
     end = time.time() + minutes * 60
     run_once(st, force_daily="--daily" in sys.argv, force_weekly="--weekly" in sys.argv)
