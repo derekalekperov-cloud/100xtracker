@@ -19,6 +19,7 @@ jobs:
     timeout-minutes: 58
     steps:
       - uses: actions/checkout@v4
+        with: { ref: main }   # always run the latest code and state, even if queued earlier
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - run: pip install -q matplotlib==3.11.2 || true   # pinned; only for the weekly chart (text is sent if it fails)
