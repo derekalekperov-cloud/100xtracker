@@ -6,14 +6,16 @@
       "last_fill_ms": 1795450577128,
       "last_ledger_ms": 1795451510575,
       "peak": 14734572.39232,
-      "emptied_alerted": false
+      "emptied_alerted": false,
+      "last_batch": 1795459615.1905727
     },
     "0x89da4baec446f35a1cbe17a9d1ee5c70b05ee43f": {
       "label": "old wallet",
       "last_fill_ms": 1795451510575,
       "last_ledger_ms": 1795451510575,
       "peak": 0.248992,
-      "emptied_alerted": false
+      "emptied_alerted": false,
+      "last_batch": 1795459615.7501276
     },
     "0x015354106478dda69c4aae3c0cf801290b738052": {
       "label": "\u2b50 Top 1 \u00b7 BTC/ZEC short-seller",
@@ -21,39 +23,110 @@
       "last_ledger_ms": 1795453951456,
       "peak": 7541102.8861,
       "follow": false,
-      "emptied_alerted": false
+      "emptied_alerted": false,
+      "last_batch": 1795459616.3010623
     },
     "0xfce053a5e461683454bf37ad66d20344c0e3f4c0": {
       "label": "\u2b50 Top 2 \u00b7 BTC trader",
       "last_fill_ms": 1795453951456,
       "last_ledger_ms": 1795453951456,
-      "peak": 5217910.281919,
+      "peak": 5294749.899615,
       "follow": false,
-      "emptied_alerted": false
+      "emptied_alerted": false,
+      "last_batch": 1795459616.737377
     },
     "0x9c16bc8f1104e4d2f72267eb981fa12de7cc4a6f": {
       "label": "\u2b50 Top 3 \u00b7 SOL/BTC/ETH",
       "last_fill_ms": 1795453951456,
       "last_ledger_ms": 1795453951456,
-      "peak": 1001448.883473,
+      "peak": 1042493.965472,
       "follow": false,
-      "emptied_alerted": false
+      "emptied_alerted": false,
+      "last_batch": 1795459617.2125778
     },
     "0xf899937184168b1d9dee75acbaa3fef0f52888db": {
       "label": "\u2b50 Top 4 \u00b7 SOL/BTC/ETH short-seller",
       "last_fill_ms": 1795453951456,
       "last_ledger_ms": 1795453951456,
-      "peak": 781097.136898,
+      "peak": 847286.657613,
       "follow": false,
-      "emptied_alerted": false
+      "emptied_alerted": false,
+      "last_batch": 1795459617.6381352
     },
     "0x15a4f009bb324a3fb9e36137136b201e3fe0dfdb": {
       "label": "\u2b50 Top 5 \u00b7 big ETH/BTC whale",
       "last_fill_ms": 1795453951456,
       "last_ledger_ms": 1795453951456,
-      "peak": 30232175.300328,
+      "peak": 31042436.111692,
       "follow": false,
-      "emptied_alerted": false
+      "emptied_alerted": false,
+      "last_batch": 1795459618.0988448
+    },
+    "0x885989fd94d30c150e6eaf897090509bce4f6aa8": {
+      "label": "\ud83c\udfc5 Pro A",
+      "last_fill_ms": 1795456648836,
+      "last_ledger_ms": 1795456648836,
+      "peak": 1601077.011464,
+      "follow": false,
+      "batch": false,
+      "emptied_alerted": false,
+      "last_batch": 1795459618.5172362
+    },
+    "0x987163b6b482c30c2f5f3aa2760109668eb0091d": {
+      "label": "\ud83c\udfc5 Pro B",
+      "last_fill_ms": 1795456648836,
+      "last_ledger_ms": 1795456648836,
+      "peak": 229971.338289,
+      "follow": false,
+      "batch": false,
+      "emptied_alerted": false,
+      "last_batch": 1795459618.926545
+    },
+    "0x2312171890250347dbf1b082bdf7950504909e92": {
+      "label": "\ud83c\udfc5 Pro C",
+      "last_fill_ms": 1795456648836,
+      "last_ledger_ms": 1795456648836,
+      "peak": 690502.906624,
+      "follow": false,
+      "batch": false,
+      "emptied_alerted": false,
+      "last_batch": 1795459619.3560476
+    },
+    "0xf97ad6704baec104d00b88e0c157e2b7b3a1ddd1": {
+      "label": "\ud83c\udfc5 Pro D \u00b7 Loco (very active)",
+      "last_fill_ms": 1795456648836,
+      "last_ledger_ms": 1795456648836,
+      "peak": 438212.761015,
+      "follow": false,
+      "batch": true,
+      "emptied_alerted": false,
+      "last_batch": 1795456654.3670647
+    },
+    "0x8af700ba841f30e0a3fcb0ee4c4a9d223e1efa05": {
+      "label": "\ud83c\udfc5 Pro E",
+      "last_fill_ms": 1795456648836,
+      "last_ledger_ms": 1795456648836,
+      "peak": 29454501.277004,
+      "follow": false,
+      "batch": false,
+      "emptied_alerted": false,
+      "last_batch": 1795459620.1864543
     }
-  }
+  },
+  "hedge_funds": {
+    "seen": [
+      "www.dataroma.com/m/holdings.php?m=HA#20263",
+      "www.dataroma.com/m/holdings.php?m=GLRE#20263",
+      "www.dataroma.com/m/holdings.php?m=VA#20263",
+      "www.dataroma.com/m/holdings.php?m=mc#20263",
+      "www.dataroma.com/m/holdings.php?m=tp#20263",
+      "www.dataroma.com/m/holdings.php?m=AM#20263",
+      "www.dataroma.com/m/holdings.php?m=psc#20263",
+      "www.dataroma.com/m/holdings.php?m=SE#20263",
+      "www.dataroma.com/m/holdings.php?m=SC#20263",
+      "www.dataroma.com/m/holdings.php?m=TCA#20263"
+    ],
+    "last_check": 1795458502.4722123
+  },
+  "last_weekly": "2026-11-23T17:57:44.021781+00:00"
 }
