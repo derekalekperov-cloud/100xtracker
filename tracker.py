@@ -16,9 +16,12 @@ import json, os, sys, time, urllib.request
 from collections import defaultdict
 from datetime import datetime, timezone
 
-DEFAULT_WALLETS = {
-    "0xe81309ec9b79309e4d108ae3a92d1aa618cd6d74": "main wallet",
-    "0x89da4baec446f35a1cbe17a9d1ee5c70b05ee43f": "old wallet",
+DEFAULT_WALLETS = {}  # wallets you follow closely (daily brief + auto-follow of their transfers)
+# Removed on purpose: the "Insta Guru" fund manager (0xe813…6d74) and his old wallet
+# (0x89da…e43f), dropped after the bait-wallet check (publicly promoted, -$19M combined).
+REMOVED = {
+    "0xe81309ec9b79309e4d108ae3a92d1aa618cd6d74",
+    "0x89da4baec446f35a1cbe17a9d1ee5c70b05ee43f",
 }
 # Top traders shortlisted from the Hyperliquid leaderboard (Nov 2026). Their alerts are
 # tagged with a ⭐ and their own label so they never mix with the fund manager's.
@@ -83,9 +86,10 @@ def wallets(state):
     if os.environ.get("MY_WALLET") and MY_KEY not in w:
         w[MY_KEY] = {"label": "👤 You", "last_fill_ms": now, "last_ledger_ms": now,
                      "peak": 0, "follow": False}
-    main = w["0xe81309ec9b79309e4d108ae3a92d1aa618cd6d74"]
-    if "last_fill_ms" in state:  # from the first version
-        main["last_fill_ms"] = state.pop("last_fill_ms")
+    state.pop("last_fill_ms", None)  # from the first version
+    for key in list(w):  # drop removed wallets and anything auto-followed from them
+        if key in REMOVED or any(w[key].get("label", "").endswith(short(r)) for r in REMOVED):
+            del w[key]
     return w
 
 
@@ -339,7 +343,7 @@ def check_money(state, w):
                 if dest.startswith(SYSTEM_PREFIX):
                     out(head("💸", f"MOVED OFF HYPERLIQUID · {usd(amt)}") + [field("📤", "Amount", usd(amt)),
                         "🌉 Via the HyperEVM bridge"],
-                        f"{who(ws)} moved {usd(amt)} off Hyperliquid, the same way the fund manager left his old wallet on Sep 17.")
+                        f"{who(ws)} moved {usd(amt)} off Hyperliquid, a common way to move money into a fresh wallet.")
                 elif dest in state["wallets"]:
                     out(head("↔️", f"INTERNAL MOVE · {usd(amt)}") + [
                         f"➡️ To: <b>{state['wallets'][dest]['label']}</b> <code>{short(dest)}</code>"],
@@ -465,8 +469,6 @@ def daily(state):
 
 # Fun, fictional nicknames (no real people). key -> (badge, nickname, short tag)
 NICKNAMES = {
-    "0xe81309ec9b79309e4d108ae3a92d1aa618cd6d74": ("💼", "The Insta Guru", "fund manager"),
-    "0x89da4baec446f35a1cbe17a9d1ee5c70b05ee43f": ("💼", "Insta Guru (old wallet)", "old wallet"),
     "0x015354106478dda69c4aae3c0cf801290b738052": ("⭐", "The Zcash Reaper", "Top 1"),
     "0xfce053a5e461683454bf37ad66d20344c0e3f4c0": ("⭐", "The Bitcoin Butler", "Top 2"),
     "0x9c16bc8f1104e4d2f72267eb981fa12de7cc4a6f": ("⭐", "Captain 40x", "Top 3"),
@@ -668,12 +670,12 @@ def preview(st, only_weekly=False):
         weekly(st)
         return
     real_info = info
-    MAIN = "0xe81309ec9b79309e4d108ae3a92d1aa618cd6d74"
+    MAIN = "0x15a4f009bb324a3fb9e36137136b201e3fe0dfdb"  # The Desert Whale
     LOCO = "0xf97ad6704baec104d00b88e0c157e2b7b3a1ddd1"
     send("👋 <b>PREVIEW</b>\nHere's one of each alert type, using real wallet data. "
          "The money-movement alerts use example amounts.")
     WALLET = KEY = MAIN
-    st["wallets"][MAIN]["last_fill_ms"] = 1794692400000  # Nov 14: SOL long opened, ETH long closed
+    st["wallets"][MAIN]["last_fill_ms"] = int(time.time() * 1000) - 3 * 86_400_000
     check_trades(st)
     WALLET = KEY = LOCO
     st["wallets"][LOCO].update(last_batch=0, last_fill_ms=int(time.time() * 1000) - 6 * 3600_000)
@@ -687,7 +689,6 @@ def preview(st, only_weekly=False):
     check_money(st, MAIN)
     st["wallets"].pop("0x1111111111111111111111111111111111111111", None)
     info = real_info
-    daily(st)
     weekly(st)
 
 
