@@ -21,6 +21,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
+      - run: pip install -q matplotlib   # only used for the weekly chart
       - name: Watch wallets every minute for ~50 min
         run: python tracker.py --loop 50 ${{ inputs.mode == 'preview' && '--weekly' || '' }}
         env: { TELEGRAM_TOKEN: "${{ secrets.TELEGRAM_TOKEN }}", TELEGRAM_CHAT_ID: "${{ secrets.TELEGRAM_CHAT_ID }}", MY_WALLET: "${{ secrets.MY_WALLET }}" }

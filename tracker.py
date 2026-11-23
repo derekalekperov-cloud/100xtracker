@@ -206,15 +206,13 @@ def madrid_now():
 
 
 def who(ws):
-    """Label without its emoji badge, for use inside sentences."""
-    lbl = ws.get("label", "wallet")
-    return {"main wallet": "The fund manager", "old wallet": "The fund manager (old wallet)",
-            "👤 You": "You"}.get(lbl, lbl.lstrip("⭐🏅👤 ").split(" · ")[0])
+    """Nickname for use inside sentences."""
+    return nick(KEY, ws)[1] if KEY else ws.get("label", "wallet")
 
 
 def sub(ws, addr):
-    lbl = {"main wallet": "💼 Fund manager", "old wallet": "💼 Fund manager · old wallet"}.get(ws["label"], ws["label"])
-    return f"{lbl} · <code>{short(addr)}</code>"
+    badge, name, tag = nick(KEY, ws)
+    return f"{badge} <b>{name}</b>" + (f" · {tag}" if tag else "") + f" · <code>{short(addr)}</code>"
 
 
 def field(emoji, name, value):
@@ -465,8 +463,98 @@ def daily(state):
     send("\n".join(lines), buttons(WALLET))
 
 
+# Fun, fictional nicknames (no real people). key -> (badge, nickname, short tag)
+NICKNAMES = {
+    "0xe81309ec9b79309e4d108ae3a92d1aa618cd6d74": ("💼", "The Insta Guru", "fund manager"),
+    "0x89da4baec446f35a1cbe17a9d1ee5c70b05ee43f": ("💼", "Insta Guru (old wallet)", "old wallet"),
+    "0x015354106478dda69c4aae3c0cf801290b738052": ("⭐", "The Zcash Reaper", "Top 1"),
+    "0xfce053a5e461683454bf37ad66d20344c0e3f4c0": ("⭐", "The Bitcoin Butler", "Top 2"),
+    "0x9c16bc8f1104e4d2f72267eb981fa12de7cc4a6f": ("⭐", "Captain 40x", "Top 3"),
+    "0xf899937184168b1d9dee75acbaa3fef0f52888db": ("⭐", "Captain Short", "Top 4"),
+    "0x15a4f009bb324a3fb9e36137136b201e3fe0dfdb": ("⭐", "The Desert Whale", "Top 5"),
+    "0x885989fd94d30c150e6eaf897090509bce4f6aa8": ("🏅", "The Index Hunter", "Pro A"),
+    "0x987163b6b482c30c2f5f3aa2760109668eb0091d": ("🏅", "Old Guard", "Pro B"),
+    "0x2312171890250347dbf1b082bdf7950504909e92": ("🏅", "The Veteran", "Pro C"),
+    "0xf97ad6704baec104d00b88e0c157e2b7b3a1ddd1": ("🏅", "Loco the Chip Maniac", "Pro D"),
+    "0x8af700ba841f30e0a3fcb0ee4c4a9d223e1efa05": ("🏅", "The Emperor", "Pro E"),
+    "me": ("👤", "You", ""),
+}
+
+
+def nick(key, ws=None):
+    """(badge, name, tag) for a wallet; falls back to its label."""
+    if key in NICKNAMES:
+        return NICKNAMES[key]
+    lbl = (ws or {}).get("label", "wallet")
+    return (lbl[:1] if not lbl[:1].isalnum() else "🧭", lbl.lstrip("⭐🏅👤🧭 "), "")
+
+
+def send_photo(png, caption, kb=None):
+    if DRY:
+        open("/tmp/weekly_preview.png", "wb").write(png)
+        print("[photo saved to /tmp/weekly_preview.png]\n" + caption + "\n" + "-" * 40)
+        return
+    import uuid
+    tok, chat = os.environ["TELEGRAM_TOKEN"], os.environ["TELEGRAM_CHAT_ID"]
+    b = uuid.uuid4().hex
+    parts = []
+    fields = {"chat_id": chat, "caption": caption, "parse_mode": "HTML"}
+    if kb:
+        fields["reply_markup"] = json.dumps({"inline_keyboard": kb})
+    for k, v in fields.items():
+        parts.append(f'--{b}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode())
+    parts.append(f'--{b}\r\nContent-Disposition: form-data; name="photo"; filename="weekly.png"\r\n'
+                 f'Content-Type: image/png\r\n\r\n'.encode() + png + b"\r\n")
+    parts.append(f"--{b}--\r\n".encode())
+    urllib.request.urlopen(urllib.request.Request(
+        f"https://api.telegram.org/bot{tok}/sendPhoto", b"".join(parts),
+        {"Content-Type": f"multipart/form-data; boundary={b}"}), timeout=60).read()
+
+
+def weekly_chart(rows):
+    """Diverging bars of 7-day return % per wallet (so a $1M and a $50M wallet compare fairly).
+    Dark theme, gains blue, losses red, dollar PnL in each label."""
+    import io
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    BG, INK, MUTED, GAIN, LOSS, GRID = "#1a1a19", "#f0efec", "#c3c2b7", "#3987e5", "#e66767", "#383835"
+    rows = sorted(rows, key=lambda r: r["ret"])
+    vals = [r["ret"] for r in rows]
+    h = 0.46 * len(rows) + 1.5
+    fig, ax = plt.subplots(figsize=(8, h), dpi=200)
+    fig.patch.set_facecolor(BG); ax.set_facecolor(BG)
+    bars = ax.barh([r["name"] for r in rows], vals, height=0.62,
+                   color=[GAIN if v >= 0 else LOSS for v in vals])
+    span = max(max(abs(v) for v in vals), 1)
+    for bar, r in zip(bars, rows):
+        v = r["ret"]
+        ax.text(v + (span * 0.03 if v >= 0 else -span * 0.03), bar.get_y() + bar.get_height() / 2,
+                f"{v:+.1f}%  ({usd(r['w'])})", va="center", ha="left" if v >= 0 else "right",
+                color=INK, fontsize=8.5)
+    ax.axvline(0, color=MUTED, lw=1)
+    lo, hi = min(vals + [0]), max(vals + [0])
+    pad = max(hi - lo, 1) * 0.55
+    ax.set_xlim(lo - (pad if lo < 0 else pad * 0.1), hi + (pad if hi > 0 else pad * 0.1))
+    ax.xaxis.grid(True, color=GRID, lw=0.6); ax.set_axisbelow(True)
+    ax.tick_params(axis="y", colors=INK, labelsize=9, length=0)
+    ax.tick_params(axis="x", colors=MUTED, labelsize=8, length=0)
+    ax.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda x, _: f"{x:+.0f}%"))
+    for s in ax.spines.values():
+        s.set_visible(False)
+    top = 1 - 0.95 / h
+    fig.text(0.03, 1 - 0.25 / h, "7-day return by wallet", color=INK, fontsize=13, fontweight="bold", va="top")
+    fig.text(0.03, 1 - 0.6 / h, f"Week ending {madrid_now():%d %b %Y}  ·  blue = profit, red = loss  ·  label = return (PnL)",
+             color=MUTED, fontsize=8.5, va="top")
+    fig.tight_layout(rect=(0, 0, 1, top))
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", facecolor=BG)
+    plt.close(fig)
+    return buf.getvalue()
+
+
 def weekly(state):
-    """One report across every tracked wallet: value, PnL, activity, open positions."""
+    """Weekly report: a PnL chart (photo) with a short caption, then one 'open bets' message."""
     global WALLET, KEY
     now = int(time.time() * 1000)
     rows = []
@@ -484,54 +572,54 @@ def weekly(state):
             continue
         if snap["acct"] < 1 and not fills:
             continue
-        g = group(fills)
-        realized = sum(v["pnl"] for v in g.values())
-        best = max(g.items(), key=lambda kv: kv[1]["pnl"], default=None)
-        worst = min(g.items(), key=lambda kv: kv[1]["pnl"], default=None)
-        pos = sorted(snap["positions"], key=lambda p: -abs(float(p["positionValue"])))
-        trend = "📈" if snap["pnl_week"] >= 0 else "📉"
-        name = {"main wallet": "💼 Fund manager", "old wallet": "💼 Fund manager (old)"}.get(ws["label"], ws["label"])
-        lines = [f"{trend} <b>{name}</b>" + (f" <code>{short(addr)}</code>" if key != MY_KEY else ""),
-                 f"7d <b>{usd(snap['pnl_week'])}</b> · 30d {usd(snap['pnl_month'])} · all {usd(snap['pnl_all'])} · value {usd(snap['acct'])}",
-                 f"🔁 {len(fills)} fills · realized {usd(realized)}"]
-        if best and best[1]["pnl"] > 0:
-            lines[-1] += f" · best {best[0][0]} {usd(best[1]['pnl'])}"
-        if worst and worst[1]["pnl"] < 0:
-            lines[-1] += f" · worst {worst[0][0]} {usd(worst[1]['pnl'])}"
-        for p in pos[:3]:
-            long = float(p["szi"]) > 0
-            lines.append(f"   {'🟢' if long else '🔴'} {'Long' if long else 'Short'} {p['coin']} "
-                         f"{usd(p['positionValue'])} · {p['leverage']['value']}x · uPnL {usd(p['unrealizedPnl'])}")
-        if len(pos) > 3:
-            lines.append(f"   +{len(pos) - 3} more")
-        rows.append({"w": snap["pnl_week"], "name": name, "text": "\n".join(lines), "pos": pos})
-    rows.sort(key=lambda r: -r["w"])
+        badge, name, tag = nick(key, ws)
+        rows.append({"key": key, "badge": badge, "name": name, "w": snap["pnl_week"],
+                     "acct": snap["acct"], "pos": snap["positions"], "fills": len(fills)})
     if not rows:
         return
-    total = sum(r["w"] for r in rows if r["name"] != "👤 You")
-    up = sum(r["w"] > 0 for r in rows)
-    longs = sum(float(p["szi"]) > 0 for r in rows for p in r["pos"])
-    shorts = sum(float(p["szi"]) < 0 for r in rows for p in r["pos"])
-    coins = defaultdict(int)
-    for r in rows:
-        for p in r["pos"]:
-            coins[p["coin"]] += 1
-    top_coin = max(coins.items(), key=lambda kv: kv[1], default=None)
+    for r in rows:  # 7-day return % on starting equity, so big and small wallets compare fairly
+        start = r["acct"] - r["w"]
+        r["ret"] = r["w"] / start * 100 if start > 1 else 0.0
+    traders = [r for r in rows if r["key"] != MY_KEY]
+    ranked = sorted(traders, key=lambda r: -r["ret"])
+    up = sum(r["w"] > 0 for r in traders)
+    total = sum(r["w"] for r in traders)
     medal = ["🥇", "🥈", "🥉"]
-    podium = " · ".join(f"{medal[i]} {r['name']} {usd(r['w'])}" for i, r in enumerate(rows[:3]))
-    summ = (f"{up} of {len(rows)} wallets were green this week (tracked traders combined {usd(total)}). "
-            f"Positioning: {longs} long{'s' * (longs != 1)} vs {shorts} short{'s' * (shorts != 1)}"
-            + (f", most held coin {top_coin[0]} ({top_coin[1]} wallet{'s' * (top_coin[1] != 1)})." if top_coin else ".")
-            + f"\nTop 3: {podium}")
-    head = (f"📅 <b>WEEKLY REPORT · {madrid_now():%d %b %Y}</b>\n"
-            f"<i>{len(rows)} wallets, best week first</i>\n{LINE}\n{key_info(summ)}\n{LINE}\n")
-    msg = head
-    for r in rows:  # Telegram caps messages at 4096 chars
-        if len(msg) + len(r["text"]) > 3800:
-            send(msg)
-            msg = ""
-        msg += r["text"] + "\n\n"
-    send(msg + footer())
+    cap = [f"📅 <b>WEEKLY REPORT · {madrid_now():%d %b}</b>", "",
+           f"⚡ <b>{up} of {len(traders)}</b> traders were green · combined <b>{usd(total)}</b>", ""]
+    cap += [f"{medal[i]} {r['name']}  <b>{r['ret']:+.1f}%</b> ({usd(r['w'])})" for i, r in enumerate(ranked[:3])]
+    if ranked and ranked[-1]["ret"] < 0:
+        cap.append(f"💀 {ranked[-1]['name']}  <b>{ranked[-1]['ret']:+.1f}%</b> ({usd(ranked[-1]['w'])})")
+    me = next((r for r in rows if r["key"] == MY_KEY), None)
+    if me:
+        cap += ["", f"👤 You: <b>{me['ret']:+.1f}%</b> ({usd(me['w'])}) this week · balance {usd(me['acct'])}"]
+    try:
+        send_photo(weekly_chart(rows), "\n".join(cap))
+    except Exception as e:  # no matplotlib / photo failed: still send the text
+        print(f"chart error: {e!r}", file=sys.stderr)
+        send("\n".join(cap))
+    # second message: where the money is positioned now
+    bets = [(r, p) for r in traders for p in r["pos"]]
+    longs = sum(float(p["szi"]) > 0 for _, p in bets)
+    shorts = len(bets) - longs
+    coins = defaultdict(int)
+    for _, p in bets:
+        coins[p["coin"]] += 1
+    mood = "LONG 🐂" if longs > shorts * 1.5 else "SHORT 🐻" if shorts > longs * 1.5 else "split ⚖️"
+    lines = ["📂 <b>OPEN BETS RIGHT NOW</b>", LINE,
+             f"🟢 <b>{longs}</b> longs · 🔴 <b>{shorts}</b> shorts → crowd is <b>{mood}</b>"]
+    if coins:
+        lines.append("🔥 Most held: " + " · ".join(f"{c} ({n})" for c, n in
+                                                   sorted(coins.items(), key=lambda kv: -kv[1])[:3]))
+    lines += ["", "<b>Biggest bets</b>"]
+    for r, p in sorted(bets, key=lambda rp: -abs(float(rp[1]["positionValue"])))[:5]:
+        long = float(p["szi"]) > 0
+        lines.append(f"{'🟢' if long else '🔴'} {r['name']} · {p['coin']} {'long' if long else 'short'} "
+                     f"<b>{usd(p['positionValue'])}</b> ({p['leverage']['value']}x)")
+    if not bets:
+        lines.append("Nobody has an open position.")
+    lines += [LINE, footer()]
+    send("\n".join(lines))
 
 
 def weekly_due(st):
@@ -570,12 +658,15 @@ def run_once(st, force_daily=False, force_weekly=False):
     save_state(st)
 
 
-def preview(st):
+def preview(st, only_weekly=False):
     """Send one example of every alert type using live data (state is not saved)."""
     import copy
     global WALLET, KEY, info
     st = copy.deepcopy(st)
     wallets(st)
+    if only_weekly:
+        weekly(st)
+        return
     real_info = info
     MAIN = "0xe81309ec9b79309e4d108ae3a92d1aa618cd6d74"
     LOCO = "0xf97ad6704baec104d00b88e0c157e2b7b3a1ddd1"
@@ -603,7 +694,7 @@ def preview(st):
 if __name__ == "__main__":
     st = load_state()
     if "--preview" in sys.argv:
-        preview(st)
+        preview(st, only_weekly="weekly" in sys.argv)
         sys.exit(0)
     minutes = int(sys.argv[sys.argv.index("--loop") + 1]) if "--loop" in sys.argv else 0
     end = time.time() + minutes * 60
