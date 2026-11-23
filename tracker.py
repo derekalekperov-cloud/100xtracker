@@ -42,6 +42,7 @@ PRO_TRADERS = {
 # Your own account: set the MY_WALLET repo secret to your public address. It is stored
 # in state.json under the key "me", so the address never appears in this public repo.
 MY_KEY = "me"
+EXTRA_DEXES = ["xyz"]  # HIP-3 dexes with stock/commodity perps (xyz:NVDA, xyz:GOLD, ...)
 WALLET = None          # address currently being processed (set in main loop)
 KEY = None             # its key in state.json (the address, or "me")
 MIN_MOVE = 50_000      # USD; smaller transfers are ignored
@@ -181,13 +182,24 @@ def snapshot():
     cs = info({"type": "clearinghouseState", "user": WALLET})
     pf = dict(info({"type": "portfolio", "user": WALLET}))
     mids = info({"type": "allMids"})
+    positions = [p["position"] for p in cs["assetPositions"]]
+    ntl = float(cs["marginSummary"]["totalNtlPos"])
+    for dex in EXTRA_DEXES:  # stock/commodity perps (e.g. xyz:NVDA) live on separate dexes
+        try:
+            x = info({"type": "clearinghouseState", "user": WALLET, "dex": dex})
+            positions += [p["position"] for p in x.get("assetPositions", [])]
+            ntl += float(x["marginSummary"]["totalNtlPos"])
+            if x.get("assetPositions"):
+                mids.update(info({"type": "allMids", "dex": dex}))
+        except Exception:
+            pass
     def pnl(k):
         h = pf.get(k, {}).get("pnlHistory") or [[0, 0]]
         return float(h[-1][1])
     return {
         "acct": equity(pf) or float(cs["marginSummary"]["accountValue"]),
-        "ntl": float(cs["marginSummary"]["totalNtlPos"]),
-        "positions": [p["position"] for p in cs["assetPositions"]],
+        "ntl": ntl,
+        "positions": positions,
         "pnl_day": pnl("day"), "pnl_week": pnl("week"),
         "pnl_month": pnl("month"), "pnl_all": pnl("allTime"),
         "mids": mids,
