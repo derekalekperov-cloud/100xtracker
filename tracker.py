@@ -190,9 +190,11 @@ def spot_pair(coin):
     if not SPOT:
         try:
             m = info({"type": "spotMeta"})
-            toks = m["tokens"]
+            toks = {t["index"]: t for t in m["tokens"]}  # token ids are not list positions
             for u in m["universe"]:
-                base, quote = toks[u["tokens"][0]], toks[u["tokens"][1]]
+                base, quote = toks.get(u["tokens"][0]), toks.get(u["tokens"][1])
+                if not base or not quote:
+                    continue
                 full, tick = (base.get("fullName") or "").strip(), base["name"]
                 if full.startswith("Unit ") and tick.startswith("U") and len(tick) > 1:
                     full, tick = full[5:], tick[1:]  # Unit-bridged coins: UBTC -> Bitcoin (BTC)
