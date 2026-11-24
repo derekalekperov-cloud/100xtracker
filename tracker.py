@@ -517,53 +517,69 @@ def check_money(state, w):
         ws["emptied_alerted"] = False
 
 
+BIG_MOVE = 100_000  # busy wallets: moves at least this size are sent instantly, smaller ones wait for the recap
+
+
+def trade_card(ws, coin, d, v, snap):
+    icon, head, meaning, _ = describe(d, coin, v, snap)
+    level, flags, facts = risk_read(snap, coin)
+    avg = v["ntl"] / v["sz"]
+    closing = d.startswith("Close")
+    lines = [f"{icon} <b>{head}</b>", sub(ws, WALLET), f"<i>{meaning}</i>", LINE,
+             field("💵", "Amount", usd(v["ntl"])),
+             field("🏷", "Sold at" if closing else "Price", px(avg))]
+    if "mid" in facts:
+        lines[-1] += f"  · now {px(facts['mid'])} ({pct((facts['mid'] / avg - 1) * 100)})"
+    if facts.get("lev") and not closing:
+        lines.append(field("⚖️", "Leverage", f"{facts['lev']}x") + f"  (gains and losses ×{facts['lev']})")
+    if closing or ">" in d:
+        res = v["pnl"]
+        lines.append(field("✅" if res >= 0 else "❌", "Profit" if res >= 0 else "Loss", usd(abs(res))))
+    lines += [LINE, f"🛡 <b>Risk: {RISK[level]}</b>"] + flags
+    lines += [key_info(trade_summary(ws, d, coin, v, level, facts, snap)), footer()]
+    send("\n".join(lines), buttons(WALLET, coin), paid=KEY != MY_KEY)
+
+
+def send_recap(ws, pending):
+    """One message with a busy wallet's small moves from the last hour."""
+    snap = snapshot()
+    realized = sum(p["pnl"] for p in pending)
+    lines = [f"🗂 <b>HOURLY RECAP · {len(pending)} small moves</b>", sub(ws, WALLET),
+             f"<i>Moves under {usd(BIG_MOVE)}. Bigger ones were sent to you instantly.</i>", LINE]
+    for p in pending:
+        icon, _, _, verb = describe(p["d"], p["coin"], p, snap)
+        res = ""
+        if "Close" in p["d"] or ">" in p["d"]:
+            res = f" · {'profit' if p['pnl'] >= 0 else 'loss'} {usd(abs(p['pnl']))}"
+        lines.append(f"{icon} {verb} <b>{usd(p['ntl'])}</b> of {asset(p['coin'])} at {px(p['ntl']/p['sz'])}{res}")
+    lines += [LINE, field("💰", "Account", usd(snap["acct"])), field("📆", "30d PnL", usd(snap["pnl_month"]))]
+    coins = sorted({asset(p["coin"]) for p in pending})
+    lines.append(key_info(f"{who(ws)} made {len(pending)} small moves this hour ({', '.join(coins)}). "
+                          f"Cashed-out result: {usd(realized)}."))
+    lines.append(footer())
+    send("\n".join(lines), buttons(WALLET), paid=KEY != MY_KEY)
+
+
 def check_trades(state):
+    """Checked every minute for every wallet. Busy wallets (batch) get big moves instantly
+    and small ones bundled into an hourly recap, so they don't flood the chat."""
     ws = state["wallets"][KEY]
-    if ws.get("batch") and time.time() - ws.get("last_batch", 0) < 3600:
-        return  # busy wallet: checked once an hour, sent as one digest
     fills = info({"type": "userFillsByTime", "user": WALLET,
                   "startTime": ws["last_fill_ms"] + 1, "aggregateByTime": True})
-    ws["last_batch"] = time.time()
-    if not fills:
-        return
-    snap = snapshot()
-    groups = sorted(group(fills).items(), key=lambda kv: kv[1]["t"])
-    if ws.get("batch"):
-        realized = sum(v["pnl"] for _, v in groups)
-        lines = [f"🗂 <b>HOURLY DIGEST · {len(groups)} moves</b>", sub(ws, WALLET), LINE]
-        for (coin, d), v in groups:
-            icon, _, _, verb = describe(d, coin, v, snap)
-            res = ""
-            if "Close" in d or ">" in d:
-                res = f" · {'profit' if v['pnl'] >= 0 else 'loss'} {usd(abs(v['pnl']))}"
-            lines.append(f"{icon} {verb} <b>{usd(v['ntl'])}</b> of {asset(coin)} at {px(v['ntl']/v['sz'])}{res}")
-        lines += [LINE, field("💰", "Account", usd(snap["acct"])), field("📆", "30d PnL", usd(snap["pnl_month"]))]
-        coins = sorted({asset(c) for (c, _), _ in groups})
-        lines.append(key_info(f"{who(ws)} made {len(groups)} moves this hour ({', '.join(coins)}). "
-                              f"Cashed-out result: {usd(realized)}."))
-        lines.append(footer())
-        send("\n".join(lines), buttons(WALLET), paid=KEY != MY_KEY)
+    batch = ws.get("batch")
+    if fills:
+        snap = snapshot()
+        for (coin, d), v in sorted(group(fills).items(), key=lambda kv: kv[1]["t"]):
+            if batch and v["ntl"] < BIG_MOVE:
+                if not ws.get("pending"):
+                    ws["pending_since"] = time.time()  # the hour starts with the first small move
+                ws.setdefault("pending", []).append(dict(v, coin=coin, d=d))
+            else:
+                trade_card(ws, coin, d, v, snap)
         ws["last_fill_ms"] = max(f["time"] for f in fills)
-        return
-    for (coin, d), v in groups:
-        icon, head, meaning, _ = describe(d, coin, v, snap)
-        level, flags, facts = risk_read(snap, coin)
-        avg = v["ntl"] / v["sz"]
-        closing = d.startswith("Close")
-        lines = [f"{icon} <b>{head}</b>", sub(ws, WALLET), f"<i>{meaning}</i>", LINE,
-                 field("💵", "Amount", usd(v["ntl"])),
-                 field("🏷", "Sold at" if closing else "Price", px(avg))]
-        if "mid" in facts:
-            lines[-1] += f"  · now {px(facts['mid'])} ({pct((facts['mid'] / avg - 1) * 100)})"
-        if facts.get("lev") and not closing:
-            lines.append(field("⚖️", "Leverage", f"{facts['lev']}x") + f"  (gains and losses ×{facts['lev']})")
-        if closing or ">" in d:
-            res = v["pnl"]
-            lines.append(field("✅" if res >= 0 else "❌", "Profit" if res >= 0 else "Loss", usd(abs(res))))
-        lines += [LINE, f"🛡 <b>Risk: {RISK[level]}</b>"] + flags
-        lines += [key_info(trade_summary(ws, d, coin, v, level, facts, snap)), footer()]
-        send("\n".join(lines), buttons(WALLET, coin), paid=KEY != MY_KEY)
-    ws["last_fill_ms"] = max(f["time"] for f in fills)
+    if batch and ws.get("pending") and time.time() - ws.get("pending_since", 0) >= 3600:
+        send_recap(ws, ws["pending"][-40:])
+        ws["pending"] = []
 
 
 def pos_line(p):
@@ -857,8 +873,13 @@ def preview(st, only_weekly=False):
     st["wallets"][MAIN]["last_fill_ms"] = 1794692400000  # Nov 14: SOL long opened, ETH long closed
     check_trades(st)
     WALLET = KEY = LOCO
-    st["wallets"][LOCO].update(last_batch=0, last_fill_ms=int(time.time() * 1000) - 6 * 3600_000)
-    check_trades(st)
+    st["wallets"][LOCO].update(pending=[], last_fill_ms=int(time.time() * 1000) - 3 * 3600_000)
+    real_time = time.time
+    time.time = lambda: real_time() + 7200  # pretend the hour is up so the recap shows
+    try:
+        check_trades(st)
+    finally:
+        time.time = real_time
     EMP = "0x8af700ba841f30e0a3fcb0ee4c4a9d223e1efa05"  # a real spot buy from the last day, if any
     WALLET = KEY = EMP
     st["wallets"][EMP]["last_fill_ms"] = int(time.time() * 1000) - 86_400_000
