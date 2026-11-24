@@ -840,6 +840,7 @@ def health(st, errors, total):
 
 def preview(st, only_weekly=False):
     """Send one example of every alert type using live data (state is not saved)."""
+    os.environ.pop("PAID_CHAT_ID", None)  # previews go to you only, never to subscribers
     import copy
     global WALLET, KEY, info
     st = copy.deepcopy(st)
@@ -880,6 +881,23 @@ def preview(st, only_weekly=False):
 
 if __name__ == "__main__":
     st = load_state()
+    if "--preview" in sys.argv and "channel" in sys.argv:  # test + welcome post for the subscriber channel
+        if not paid_chat():
+            print("PAID_CHAT_ID secret is empty", file=sys.stderr)
+            sys.exit(1)
+        ok = tg("sendMessage", {"parse_mode": "HTML", "text": "\n".join([
+            "👋 <b>Welcome to Derek Tracker</b>", LINE,
+            "You'll get a live alert within about 1–2 minutes whenever one of the tracked Hyperliquid "
+            "wallets trades or moves money, plus:",
+            "☀️ a daily brief on the main wallet",
+            "📅 a weekly report with a chart of every wallet",
+            "", "Every alert ends with a ⚡ <b>Key info</b> line that sums it up in plain words.", LINE,
+            "<i>Data only: this channel reports public blockchain activity. It is not financial advice, "
+            "an investment recommendation or a trading signal. Past results don't predict future results.</i>"])},
+            chat=paid_chat())
+        send("✅ Subscriber channel test: the welcome post went through." if ok else
+             "❌ Subscriber channel test failed. Check the bot is an admin with 'Post messages' on.")
+        sys.exit(0 if ok else 1)
     if "--preview" in sys.argv:
         preview(st, only_weekly="weekly" in sys.argv)
         sys.exit(0)
