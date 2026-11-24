@@ -182,6 +182,24 @@ MARKETS = {"GOLD": "Gold", "SILVER": "Silver", "CL": "Oil (WTI)", "BRENTOIL": "O
            "EUR": "Euro", "JPY": "Japanese yen", "GBP": "British pound", "DXY": "US dollar index",
            "VIX": "Fear index (VIX)", "SPCX": "SpaceX stock", "JP225": "Japan 225 index", "KR200": "Korea 200 index"}
 NAMES = {}
+SPOT = {}  # "@272" -> ("Zcash", "ZEC", "UZEC/USDC")
+
+
+def spot_pair(coin):
+    """Spot markets come as '@123' or 'PURR/USDC'. Look up the real token once per run."""
+    if not SPOT:
+        try:
+            m = info({"type": "spotMeta"})
+            toks = m["tokens"]
+            for u in m["universe"]:
+                base, quote = toks[u["tokens"][0]], toks[u["tokens"][1]]
+                full, tick = (base.get("fullName") or "").strip(), base["name"]
+                if full.startswith("Unit ") and tick.startswith("U") and len(tick) > 1:
+                    full, tick = full[5:], tick[1:]  # Unit-bridged coins: UBTC -> Bitcoin (BTC)
+                SPOT[u["name"]] = (full or tick, tick, f"{base['name']}/{quote['name']}")
+        except Exception as e:
+            print(f"spotMeta error: {e!r}", file=sys.stderr)
+    return SPOT.get(coin)
 
 
 def asset(coin):
@@ -198,6 +216,14 @@ def asset(coin):
                 desc = ""
             m = re.search(r"references 1 (?:share of )?(.+?)(?:,? (?:Inc\.|Corp\.|Corporation|PBC|Ltd\.?|plc|N\.V\.|S\.A\.)| Class| common| ordinary| \()", desc)
             name = f"{html.escape(m.group(1).strip(' ,'))} stock" if m else f"{html.escape(tick)} stock"
+    elif coin.startswith("@") or "/" in coin:
+        sp = spot_pair(coin)
+        if sp:
+            full, tick = sp[0], sp[1]
+            full = CRYPTO.get(tick, full)
+            name = html.escape(f"{full} ({tick})" if full.lower() != tick.lower() else tick)
+        else:
+            name = html.escape(coin)
     elif coin in CRYPTO:
         name = f"{CRYPTO[coin]} ({coin})"
     else:
@@ -239,7 +265,9 @@ def describe(d, coin, v, snap):
     if d == "Short > Long":
         return ("🟢", f"SWITCHED TO LONG · {name}", "Closed the DOWN bet and now bets the price goes UP 📈", "Switched to long")
     verb = {"Buy": "Bought", "Sell": "Sold"}.get(d, d)
-    return ("🔵", f"{verb.upper()} · {name}", "Spot trade (owning the coin, no leverage)", verb)
+    meaning = ("Bought the real coin, no borrowing. Makes money if the price goes UP 📈" if d == "Buy" else
+               "Sold real coins they owned, no borrowing" if d == "Sell" else d)
+    return ("🔵", f"{verb.upper()} · {name}", meaning, verb)
 
 
 # ───────────────────────── Message design ─────────────────────────
@@ -291,7 +319,11 @@ def pct(x):
 def buttons(addr, coin=None):
     row = [{"text": "🔍 Wallet", "url": f"https://hypurrscan.io/address/{addr}"}]
     if coin:
-        row.append({"text": f"📈 {coin.split(':')[-1]} chart", "url": f"https://app.hyperliquid.xyz/trade/{coin}"})
+        label, path = coin.split(":")[-1], coin
+        sp = spot_pair(coin) if coin.startswith("@") or "/" in coin else None
+        if sp:
+            label, path = sp[1], sp[2]
+        row.append({"text": f"📈 {label} chart", "url": f"https://app.hyperliquid.xyz/trade/{path}"})
     return [row]
 
 
@@ -386,6 +418,9 @@ def trade_summary(ws, d, coin, v, level, facts, snap):
              f"This is an exit, not a new bet on it going {'DOWN' if way == 'UP' else 'UP'}.")
     elif ">" in d:
         s = f"{name} switched sides on {what}: now betting {size} it goes {'DOWN' if d.endswith('Short') else 'UP'}."
+    elif d in ("Buy", "Sell"):
+        s = (f"{name} {'bought' if d == 'Buy' else 'sold'} {size} of {what} as real coins (spot), no borrowing, "
+             f"so there's no wipe-out price.")
     else:
         s = f"{name}: {d.lower()} {what} for {size}."
     tail = {0: "Risk looks low.", 1: "Some warning signs, be careful with size.",
@@ -555,16 +590,16 @@ def daily(state):
 NICKNAMES = {
     "0xe81309ec9b79309e4d108ae3a92d1aa618cd6d74": ("💯", "100x", "fund manager"),
     "0x89da4baec446f35a1cbe17a9d1ee5c70b05ee43f": ("💯", "100x (old wallet)", "old wallet"),
-    "0x015354106478dda69c4aae3c0cf801290b738052": ("⭐", "The Zcash Reaper", "Top 1"),
-    "0xfce053a5e461683454bf37ad66d20344c0e3f4c0": ("⭐", "The Bitcoin Butler", "Top 2"),
-    "0x9c16bc8f1104e4d2f72267eb981fa12de7cc4a6f": ("⭐", "Captain 40x", "Top 3"),
-    "0xf899937184168b1d9dee75acbaa3fef0f52888db": ("⭐", "Captain Short", "Top 4"),
-    "0x15a4f009bb324a3fb9e36137136b201e3fe0dfdb": ("⭐", "The Desert Whale", "Top 5"),
-    "0x885989fd94d30c150e6eaf897090509bce4f6aa8": ("🏅", "The Index Hunter", "Pro A"),
-    "0x987163b6b482c30c2f5f3aa2760109668eb0091d": ("🏅", "Old Guard", "Pro B"),
-    "0x2312171890250347dbf1b082bdf7950504909e92": ("🏅", "The Veteran", "Pro C"),
-    "0xf97ad6704baec104d00b88e0c157e2b7b3a1ddd1": ("🏅", "Loco the Chip Maniac", "Pro D"),
-    "0x8af700ba841f30e0a3fcb0ee4c4a9d223e1efa05": ("🏅", "The Emperor", "Pro E"),
+    "0x015354106478dda69c4aae3c0cf801290b738052": ("⭐", "The Zcash Reaper", "Top trader #1"),
+    "0xfce053a5e461683454bf37ad66d20344c0e3f4c0": ("⭐", "The Bitcoin Butler", "Top trader #2"),
+    "0x9c16bc8f1104e4d2f72267eb981fa12de7cc4a6f": ("⭐", "Captain 40x", "Top trader #3"),
+    "0xf899937184168b1d9dee75acbaa3fef0f52888db": ("⭐", "Captain Short", "Top trader #4"),
+    "0x15a4f009bb324a3fb9e36137136b201e3fe0dfdb": ("⭐", "The Desert Whale", "Top trader #5"),
+    "0x885989fd94d30c150e6eaf897090509bce4f6aa8": ("🏅", "The Index Hunter", "Long-time pro"),
+    "0x987163b6b482c30c2f5f3aa2760109668eb0091d": ("🏅", "Old Guard", "Long-time pro"),
+    "0x2312171890250347dbf1b082bdf7950504909e92": ("🏅", "The Veteran", "Long-time pro"),
+    "0xf97ad6704baec104d00b88e0c157e2b7b3a1ddd1": ("🏅", "Loco the Chip Maniac", "Long-time pro"),
+    "0x8af700ba841f30e0a3fcb0ee4c4a9d223e1efa05": ("🏅", "The Emperor", "Long-time pro"),
     "me": ("👛", "Mini Wallet", "your wallet"),
 }
 
@@ -794,6 +829,13 @@ def preview(st, only_weekly=False):
     WALLET = KEY = LOCO
     st["wallets"][LOCO].update(last_batch=0, last_fill_ms=int(time.time() * 1000) - 6 * 3600_000)
     check_trades(st)
+    EMP = "0x8af700ba841f30e0a3fcb0ee4c4a9d223e1efa05"  # a real spot buy from the last day, if any
+    WALLET = KEY = EMP
+    st["wallets"][EMP]["last_fill_ms"] = int(time.time() * 1000) - 86_400_000
+    info = lambda b: ([f for f in real_info(b) if f["coin"].startswith("@")][-1:]
+                      if b["type"] == "userFillsByTime" else real_info(b))
+    check_trades(st)
+    info = real_info
     fake = [{"time": 1, "delta": {"type": "send", "user": MAIN, "destination": "0x1111111111111111111111111111111111111111",
                                   "usdcValue": "2500000"}},
             {"time": 2, "delta": {"type": "withdraw", "usdc": "1500000"}}]
