@@ -25,7 +25,7 @@ jobs:
       - run: pip install -q matplotlib==3.11.2 || true   # pinned; only for the weekly chart (text is sent if it fails)
       - name: Watch wallets every minute for ~50 min
         run: python tracker.py --loop 50 ${{ inputs.mode == 'preview' && '--weekly' || '' }}
-        env: { TELEGRAM_TOKEN: "${{ secrets.TELEGRAM_TOKEN }}", TELEGRAM_CHAT_ID: "${{ secrets.TELEGRAM_CHAT_ID }}", MY_WALLET: "${{ secrets.MY_WALLET }}" }
+        env: { TELEGRAM_TOKEN: "${{ secrets.TELEGRAM_TOKEN }}", TELEGRAM_CHAT_ID: "${{ secrets.TELEGRAM_CHAT_ID }}", MY_WALLET: "${{ secrets.MY_WALLET }}", PAID_CHAT_ID: "${{ secrets.PAID_CHAT_ID }}" }
       - name: Save state
         if: always()
         run: |

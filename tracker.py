@@ -329,22 +329,43 @@ def buttons(addr, coin=None):
     return [row]
 
 
-def send(text, kb=None):
-    if DRY:
-        extra = ("\n[" + "] [".join(b["text"] for r in kb for b in r) + "]") if kb else ""
-        print(text + extra + "\n" + "-" * 40)
-        return
-    msg = {"text": text, "parse_mode": "HTML", "disable_web_page_preview": True}
-    if kb:
-        msg["reply_markup"] = {"inline_keyboard": kb}
-    tg("sendMessage", msg)
+# Paid subscribers get a second copy of the alerts in a private channel (PAID_CHAT_ID secret).
+# It is a data feed, not advice: no opinions on whether to copy, and never your own Mini Wallet.
+ADVICE = ["Risk looks low.", "Some warning signs, be careful with size.", "Several red flags. Risky to copy.",
+          "Any copied positions in the same coins are in danger."]
 
 
-def tg(method, msg, tries=3):
+def public(text):
+    """Subscriber version: facts only, no opinions on what to do."""
+    text = re.sub(r"🛡 <b>Risk: [^<]*</b>", "📊 <b>Position facts</b>", text)
+    for a in ADVICE:
+        text = text.replace(" " + a, "").replace(a, "")
+    return text.replace("Not financial advice ·", "Data only, not financial advice ·")
+
+
+def paid_chat():
+    return os.environ.get("PAID_CHAT_ID", "").strip()
+
+
+def send(text, kb=None, paid=False):
+    """Send to you; with paid=True also to the subscriber channel (if set up)."""
+    targets = [(None, text)] + ([(paid_chat(), public(text))] if paid and paid_chat() else [])
+    for chat, body in targets:
+        if DRY:
+            extra = ("\n[" + "] [".join(b["text"] for r in kb for b in r) + "]") if kb else ""
+            print(("[SUBSCRIBERS]\n" if chat else "") + body + extra + "\n" + "-" * 40)
+            continue
+        msg = {"text": body, "parse_mode": "HTML", "disable_web_page_preview": True}
+        if kb:
+            msg["reply_markup"] = {"inline_keyboard": kb}
+        tg("sendMessage", msg, chat=chat)
+
+
+def tg(method, msg, tries=3, chat=None):
     """Telegram call that never crashes the tracker: retries network errors, obeys flood
     limits, and if Telegram rejects the formatting it resends the alert as plain text."""
-    tok, chat = os.environ["TELEGRAM_TOKEN"], os.environ["TELEGRAM_CHAT_ID"]
-    msg = dict(msg, chat_id=chat)
+    tok = os.environ["TELEGRAM_TOKEN"]
+    msg = dict(msg, chat_id=chat or os.environ["TELEGRAM_CHAT_ID"])
     for i in range(tries):
         try:
             urllib.request.urlopen(urllib.request.Request(
@@ -440,7 +461,7 @@ def check_money(state, w):
                 "startTime": ws["last_ledger_ms"] + 1})
     head = lambda icon, title: [f"{icon} <b>{title}</b>", sub(ws, me), LINE]
     out = lambda lines, summary, kb=None: send("\n".join(lines + [LINE, key_info(summary), footer()]),
-                                              kb or buttons(me))
+                                              kb or buttons(me), paid=KEY != MY_KEY)
     for u in sorted(ups, key=lambda u: u["time"]):
         d = u["delta"]; t = d["type"]
         amt = float(d.get("usdcValue") or d.get("usdc") or d.get("amount") or 0)
@@ -521,7 +542,7 @@ def check_trades(state):
         lines.append(key_info(f"{who(ws)} made {len(groups)} moves this hour ({', '.join(coins)}). "
                               f"Cashed-out result: {usd(realized)}."))
         lines.append(footer())
-        send("\n".join(lines), buttons(WALLET))
+        send("\n".join(lines), buttons(WALLET), paid=KEY != MY_KEY)
         ws["last_fill_ms"] = max(f["time"] for f in fills)
         return
     for (coin, d), v in groups:
@@ -541,7 +562,7 @@ def check_trades(state):
             lines.append(field("✅" if res >= 0 else "❌", "Profit" if res >= 0 else "Loss", usd(abs(res))))
         lines += [LINE, f"🛡 <b>Risk: {RISK[level]}</b>"] + flags
         lines += [key_info(trade_summary(ws, d, coin, v, level, facts, snap)), footer()]
-        send("\n".join(lines), buttons(WALLET, coin))
+        send("\n".join(lines), buttons(WALLET, coin), paid=KEY != MY_KEY)
     ws["last_fill_ms"] = max(f["time"] for f in fills)
 
 
@@ -585,7 +606,7 @@ def daily(state):
         summ = f"{who(ws)} has no open bets. "
     summ += (f"{len(g)} trades in the last 24h, cashed-out result {usd(realized)}." if fills else "No trades in the last 24h.")
     lines += [LINE, key_info(summ), footer()]
-    send("\n".join(lines), buttons(WALLET))
+    send("\n".join(lines), buttons(WALLET), paid=KEY != MY_KEY)
 
 
 # Fun, fictional nicknames (no real people). key -> (badge, nickname, short tag)
@@ -614,13 +635,13 @@ def nick(key, ws=None):
     return (lbl[:1] if not lbl[:1].isalnum() else "🧭", lbl.lstrip("⭐🏅👤🧭 "), "")
 
 
-def send_photo(png, caption, kb=None):
+def send_photo(png, caption, kb=None, chat=None):
     if DRY:
         open("/tmp/weekly_preview.png", "wb").write(png)
-        print("[photo saved to /tmp/weekly_preview.png]\n" + caption + "\n" + "-" * 40)
+        print(("[SUBSCRIBERS]\n" if chat else "") + "[photo saved to /tmp/weekly_preview.png]\n" + caption + "\n" + "-" * 40)
         return
     import uuid
-    tok, chat = os.environ["TELEGRAM_TOKEN"], os.environ["TELEGRAM_CHAT_ID"]
+    tok, chat = os.environ["TELEGRAM_TOKEN"], chat or os.environ["TELEGRAM_CHAT_ID"]
     b = uuid.uuid4().hex
     parts = []
     fields = {"chat_id": chat, "caption": caption, "parse_mode": "HTML"}
@@ -640,7 +661,7 @@ def send_photo(png, caption, kb=None):
         except Exception as e:
             print(f"photo send failed: {e!r}", file=sys.stderr)
             time.sleep(5)
-    send(caption, kb)  # chart failed twice: still deliver the text
+    tg("sendMessage", {"text": caption, "parse_mode": "HTML"}, chat=chat)  # chart failed twice: still send the text
 
 
 def weekly_chart(rows):
@@ -723,13 +744,19 @@ def weekly(state):
     if ranked and ranked[-1]["ret"] < 0:
         cap.append(f"💀 {ranked[-1]['name']}  <b>{ranked[-1]['ret']:+.1f}%</b> ({usd(ranked[-1]['w'])})")
     me = next((r for r in rows if r["key"] == MY_KEY), None)
+    sub_cap = public("\n".join(cap))  # subscribers never see your Mini Wallet
     if me:
         cap += ["", f"👛 Mini Wallet: <b>{me['ret']:+.1f}%</b> ({usd(me['w'])}) this week · balance {usd(me['acct'])}"]
-    try:
-        send_photo(weekly_chart(rows), "\n".join(cap))
-    except Exception as e:  # no matplotlib / photo failed: still send the text
-        print(f"chart error: {e!r}", file=sys.stderr)
-        send("\n".join(cap))
+    for chat, chart_rows, text in [(None, rows, "\n".join(cap))] + (
+            [(paid_chat(), traders, sub_cap)] if paid_chat() else []):
+        try:
+            send_photo(weekly_chart(chart_rows), text, chat=chat)
+        except Exception as e:  # no matplotlib / photo failed: still send the text
+            print(f"chart error: {e!r}", file=sys.stderr)
+            if DRY:
+                print(text)
+            else:
+                tg("sendMessage", {"text": text, "parse_mode": "HTML"}, chat=chat)
     # second message: where the money is positioned now
     bets = [(r, p) for r in traders for p in r["pos"]]
     longs = sum(float(p["szi"]) > 0 for _, p in bets)
@@ -751,7 +778,7 @@ def weekly(state):
     if not bets:
         lines.append("Nobody has an open position.")
     lines += [LINE, footer()]
-    send("\n".join(lines))
+    send("\n".join(lines), paid=True)
 
 
 def weekly_due(st):
