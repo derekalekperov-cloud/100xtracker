@@ -638,7 +638,7 @@ NICKNAMES = {
     "0x987163b6b482c30c2f5f3aa2760109668eb0091d": ("🏅", "Thomas", "Long-time pro"),
     "0x2312171890250347dbf1b082bdf7950504909e92": ("🏅", "William", "Long-time pro"),
     "0xf97ad6704baec104d00b88e0c157e2b7b3a1ddd1": ("🏅", "Jack", "Long-time pro"),
-    "0x8af700ba841f30e0a3fcb0ee4c4a9d223e1efa05": ("🏅", "Charlie", "Long-time pro"),
+    "0x8af700ba841f30e0a3fcb0ee4c4a9d223e1efa05": ("🏅", "Derek", "Long-time pro"),
     "me": ("👛", "Mini Wallet", "your wallet"),
 }
 
