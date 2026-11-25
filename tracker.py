@@ -36,7 +36,7 @@ PRO_TRADERS = {
     "0x885989fd94d30c150e6eaf897090509bce4f6aa8": ("Pro A", False),
     "0x987163b6b482c30c2f5f3aa2760109668eb0091d": ("Pro B", False),
     "0x2312171890250347dbf1b082bdf7950504909e92": ("Pro C", False),
-    "0xf97ad6704baec104d00b88e0c157e2b7b3a1ddd1": ("Pro D · Loco (very active)", True),
+    "0xf97ad6704baec104d00b88e0c157e2b7b3a1ddd1": ("Pro D · Jack (very active)", True),
     "0x8af700ba841f30e0a3fcb0ee4c4a9d223e1efa05": ("Pro E", False),
 }
 # Your own account: set the MY_WALLET repo secret to your public address. It is stored
@@ -629,16 +629,16 @@ def daily(state):
 NICKNAMES = {
     "0xe81309ec9b79309e4d108ae3a92d1aa618cd6d74": ("💯", "100x", "fund manager"),
     "0x89da4baec446f35a1cbe17a9d1ee5c70b05ee43f": ("💯", "100x (old wallet)", "old wallet"),
-    "0x015354106478dda69c4aae3c0cf801290b738052": ("⭐", "The Zcash Reaper", "Top trader #1"),
-    "0xfce053a5e461683454bf37ad66d20344c0e3f4c0": ("⭐", "The Bitcoin Butler", "Top trader #2"),
-    "0x9c16bc8f1104e4d2f72267eb981fa12de7cc4a6f": ("⭐", "Captain 40x", "Top trader #3"),
-    "0xf899937184168b1d9dee75acbaa3fef0f52888db": ("⭐", "Captain Short", "Top trader #4"),
-    "0x15a4f009bb324a3fb9e36137136b201e3fe0dfdb": ("⭐", "The Desert Whale", "Top trader #5"),
-    "0x885989fd94d30c150e6eaf897090509bce4f6aa8": ("🏅", "The Index Hunter", "Long-time pro"),
-    "0x987163b6b482c30c2f5f3aa2760109668eb0091d": ("🏅", "Old Guard", "Long-time pro"),
-    "0x2312171890250347dbf1b082bdf7950504909e92": ("🏅", "The Veteran", "Long-time pro"),
-    "0xf97ad6704baec104d00b88e0c157e2b7b3a1ddd1": ("🏅", "Loco the Chip Maniac", "Long-time pro"),
-    "0x8af700ba841f30e0a3fcb0ee4c4a9d223e1efa05": ("🏅", "The Emperor", "Long-time pro"),
+    "0x015354106478dda69c4aae3c0cf801290b738052": ("⭐", "Dmitri", "Top trader #1"),
+    "0xfce053a5e461683454bf37ad66d20344c0e3f4c0": ("⭐", "James", "Top trader #2"),
+    "0x9c16bc8f1104e4d2f72267eb981fa12de7cc4a6f": ("⭐", "Oliver", "Top trader #3"),
+    "0xf899937184168b1d9dee75acbaa3fef0f52888db": ("⭐", "Nikolai", "Top trader #4"),
+    "0x15a4f009bb324a3fb9e36137136b201e3fe0dfdb": ("⭐", "Omar", "Top trader #5"),
+    "0x885989fd94d30c150e6eaf897090509bce4f6aa8": ("🏅", "Harry", "Long-time pro"),
+    "0x987163b6b482c30c2f5f3aa2760109668eb0091d": ("🏅", "George", "Long-time pro"),
+    "0x2312171890250347dbf1b082bdf7950504909e92": ("🏅", "Thomas", "Long-time pro"),
+    "0xf97ad6704baec104d00b88e0c157e2b7b3a1ddd1": ("🏅", "Jack", "Long-time pro"),
+    "0x8af700ba841f30e0a3fcb0ee4c4a9d223e1efa05": ("🏅", "Charlie", "Long-time pro"),
     "me": ("👛", "Mini Wallet", "your wallet"),
 }
 
