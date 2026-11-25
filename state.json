@@ -1,5 +1,5 @@
 {
-  "last_daily": "2026-11-24T08:00:35.856921+00:00",
+  "last_daily": "2026-11-25T08:00:22.078088+00:00",
   "wallets": {
     "0xe81309ec9b79309e4d108ae3a92d1aa618cd6d74": {
       "label": "main wallet",
@@ -8,7 +8,7 @@
       "peak": 14734572.39232,
       "emptied_alerted": false,
       "last_batch": 1795516449.0674531,
-      "_eq_checked": 1795591105.6797218
+      "_eq_checked": 1795593682.3271873
     },
     "0x89da4baec446f35a1cbe17a9d1ee5c70b05ee43f": {
       "label": "old wallet",
@@ -17,7 +17,7 @@
       "peak": 0.248992,
       "emptied_alerted": false,
       "last_batch": 1795516449.4705803,
-      "_eq_checked": 1795591106.377955
+      "_eq_checked": 1795593683.1330445
     },
     "0x015354106478dda69c4aae3c0cf801290b738052": {
       "label": "\u2b50 Top 1 \u00b7 BTC/ZEC short-seller",
@@ -27,7 +27,7 @@
       "follow": false,
       "emptied_alerted": false,
       "last_batch": 1795516449.8419685,
-      "_eq_checked": 1795591107.118104
+      "_eq_checked": 1795593683.8057263
     },
     "0xfce053a5e461683454bf37ad66d20344c0e3f4c0": {
       "label": "\u2b50 Top 2 \u00b7 BTC trader",
@@ -37,17 +37,17 @@
       "follow": false,
       "emptied_alerted": false,
       "last_batch": 1795516450.1910706,
-      "_eq_checked": 1795590650.960251
+      "_eq_checked": 1795593880.472914
     },
     "0x9c16bc8f1104e4d2f72267eb981fa12de7cc4a6f": {
       "label": "\u2b50 Top 3 \u00b7 SOL/BTC/ETH",
       "last_fill_ms": 1795582759718,
       "last_ledger_ms": 1795453951456,
-      "peak": 1225284.503816,
+      "peak": 1254046.38296,
       "follow": false,
       "emptied_alerted": false,
       "last_batch": 1795516450.5981991,
-      "_eq_checked": 1795591108.036739
+      "_eq_checked": 1795593684.6913383
     },
     "0xf899937184168b1d9dee75acbaa3fef0f52888db": {
       "label": "\u2b50 Top 4 \u00b7 SOL/BTC/ETH short-seller",
@@ -57,17 +57,17 @@
       "follow": false,
       "emptied_alerted": false,
       "last_batch": 1795516450.9792168,
-      "_eq_checked": 1795591108.6891313
+      "_eq_checked": 1795593685.1893752
     },
     "0x15a4f009bb324a3fb9e36137136b201e3fe0dfdb": {
       "label": "\u2b50 Top 5 \u00b7 big ETH/BTC whale",
       "last_fill_ms": 1795453951456,
       "last_ledger_ms": 1795453951456,
-      "peak": 33514269.152717,
+      "peak": 33931460.907428,
       "follow": false,
       "emptied_alerted": false,
       "last_batch": 1795516451.318747,
-      "_eq_checked": 1795591109.380513
+      "_eq_checked": 1795593685.9131336
     },
     "0x885989fd94d30c150e6eaf897090509bce4f6aa8": {
       "label": "\ud83c\udfc5 Pro A",
@@ -78,7 +78,7 @@
       "batch": false,
       "emptied_alerted": false,
       "last_batch": 1795516451.6823134,
-      "_eq_checked": 1795591109.9672205
+      "_eq_checked": 1795593686.42548
     },
     "0x987163b6b482c30c2f5f3aa2760109668eb0091d": {
       "label": "\ud83c\udfc5 Pro B",
@@ -89,7 +89,7 @@
       "batch": false,
       "emptied_alerted": false,
       "last_batch": 1795516452.0487719,
-      "_eq_checked": 1795591110.6830416
+      "_eq_checked": 1795593687.0857246
     },
     "0x2312171890250347dbf1b082bdf7950504909e92": {
       "label": "\ud83c\udfc5 Pro C",
@@ -100,18 +100,18 @@
       "batch": false,
       "emptied_alerted": false,
       "last_batch": 1795516452.3833685,
-      "_eq_checked": 1795591111.3161337
+      "_eq_checked": 1795593687.7619727
     },
     "0xf97ad6704baec104d00b88e0c157e2b7b3a1ddd1": {
       "label": "\ud83c\udfc5 Pro D \u00b7 Loco (very active)",
-      "last_fill_ms": 1795591232811,
+      "last_fill_ms": 1795592239305,
       "last_ledger_ms": 1795535529393,
       "peak": 447413.302678,
       "follow": false,
       "batch": true,
       "emptied_alerted": false,
       "last_batch": 1795514754.8439355,
-      "_eq_checked": 1795590783.646494,
+      "_eq_checked": 1795594012.719286,
       "pending_since": 1795591178.9032426,
       "pending": [
         {
@@ -133,6 +133,26 @@
           "start": 7.87,
           "coin": "xyz:MU",
           "d": "Open Long"
+        },
+        {
+          "sz": 250.0,
+          "ntl": 19505.25,
+          "pnl": 0.0,
+          "fee": 0.526641,
+          "t": 1795592212025,
+          "start": 0.0,
+          "coin": "xyz:ANT",
+          "d": "Open Long"
+        },
+        {
+          "sz": 500.0,
+          "ntl": 74505.0,
+          "pnl": 0.0,
+          "fee": 2.011635,
+          "t": 1795592239305,
+          "start": 3000.0,
+          "coin": "xyz:NVDA",
+          "d": "Open Long"
         }
       ]
     },
@@ -145,7 +165,7 @@
       "batch": false,
       "emptied_alerted": false,
       "last_batch": 1795516452.9246094,
-      "_eq_checked": 1795591112.3947718
+      "_eq_checked": 1795593688.6069267
     },
     "me": {
       "label": "\ud83d\udc5b Mini Wallet",
@@ -153,7 +173,7 @@
       "last_ledger_ms": 1795459639438,
       "peak": 109.528425,
       "follow": false,
-      "_eq_checked": 1795591113.1038144,
+      "_eq_checked": 1795593689.1089194,
       "emptied_alerted": false,
       "last_batch": 1795516453.2638187
     }
