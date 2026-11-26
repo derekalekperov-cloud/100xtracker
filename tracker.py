@@ -854,6 +854,53 @@ def health(st, errors, total):
         h["alerted"] = True
 
 
+def briefing(st):
+    """Midday briefing for subscribers: every tracked wallet's open bets and 7-day result.
+    Facts only. Never includes the Mini Wallet."""
+    global WALLET, KEY
+    order = []
+    for key, ws in wallets(st).items():
+        if key == MY_KEY:
+            continue
+        WALLET = KEY = key
+        try:
+            snap = snapshot()
+        except Exception as e:
+            print(f"briefing error {key[:8]}: {e!r}", file=sys.stderr)
+            continue
+        if snap["acct"] < 1 and not snap["positions"]:
+            continue  # empty wallet
+        order.append((key, ws, snap, sum(abs(float(p["positionValue"])) for p in snap["positions"])))
+    order.sort(key=lambda r: -r[3])
+    lines = [f"📊 <b>MIDDAY BRIEFING · {madrid_now():%a %d %b}</b>",
+             "Open bets of every tracked wallet, and their result over the last 7 days.", LINE]
+    flat, side = [], defaultdict(float)
+    for key, ws, snap, total in order:
+        badge, name, _ = nick(key, ws)
+        if not snap["positions"]:
+            flat.append(name)
+            continue
+        lines.append(f"{badge} <b>{name}</b> · week <b>{'+' if snap['pnl_week'] >= 0 else '−'}{usd(abs(snap['pnl_week']))}</b>")
+        pos = sorted(snap["positions"], key=lambda p: -abs(float(p["positionValue"])))
+        for p in pos:
+            side[(p["coin"], float(p["szi"]) > 0)] += abs(float(p["positionValue"]))
+        for p in pos[:3]:
+            up, u = float(p["szi"]) > 0, float(p["unrealizedPnl"])
+            lines.append(f"{'🟢' if up else '🔴'} {asset(p['coin'])}: {usd(p['positionValue'])} betting "
+                         f"{'UP' if up else 'DOWN'} · {p['leverage']['value']}x · "
+                         f"{'+' if u >= 0 else '−'}{usd(abs(u))} open")
+        if len(pos) > 3:
+            rest = sum(abs(float(p["positionValue"])) for p in pos[3:])
+            lines.append(f"➕ {len(pos) - 3} smaller bets worth {usd(rest)}")
+        lines.append("")
+    if flat:
+        lines.append(f"⚪ <b>In cash, no open bets:</b> {', '.join(flat)}")
+    top = sorted(side.items(), key=lambda kv: -kv[1])[:3]
+    mood = "; ".join(f"{usd(v)} betting {'UP' if up else 'DOWN'} on {asset(c)}" for (c, up), v in top)
+    lines += [LINE, key_info(f"Where the most money sits right now: {mood}."), footer()]
+    return "\n".join(lines)
+
+
 def preview(st, only_weekly=False):
     """Send one example of every alert type using live data (state is not saved)."""
     os.environ.pop("PAID_CHAT_ID", None)  # previews go to you only, never to subscribers
@@ -925,6 +972,14 @@ if __name__ == "__main__":
         send("\n".join(["🩺 <b>BOT STATUS</b>", LINE, *rows, LINE,
                          "✅ Watching every wallet every minute. Trades alert within 1–2 min; "
                          "Jack's moves under $100k come as an hourly recap.", footer()]))
+        sys.exit(0)
+    if "--preview" in sys.argv and ("briefing" in sys.argv or "briefing-me" in sys.argv):
+        text = briefing(st)
+        if "briefing" in sys.argv and paid_chat():  # subscribers get the facts-only version
+            tg("sendMessage", {"text": public(text), "parse_mode": "HTML"}, chat=paid_chat())
+            send("✅ Midday briefing posted to the subscriber channel.")
+        else:
+            send(text)
         sys.exit(0)
     if "--preview" in sys.argv and "channel" in sys.argv:  # test + welcome post for the subscriber channel
         if not paid_chat():
