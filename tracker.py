@@ -902,6 +902,30 @@ def preview(st, only_weekly=False):
 
 if __name__ == "__main__":
     st = load_state()
+    if "--preview" in sys.argv and "status" in sys.argv:  # one health card: every wallet, funds, last trade
+        os.environ.pop("PAID_CHAT_ID", None)
+        now = int(time.time() * 1000)
+        rows = []
+        for key, ws in wallets(st).items():
+            addr = os.environ.get("MY_WALLET", "").strip().lower() if key == MY_KEY else key
+            if not addr:
+                continue
+            try:
+                acct = equity(dict(info({"type": "portfolio", "user": addr})))
+                f = info({"type": "userFillsByTime", "user": addr, "startTime": now - 7 * 86_400_000,
+                          "aggregateByTime": True})
+                last = max((x["time"] for x in f), default=0)
+                ago = "no trades in 7d" if not last else (
+                    f"last trade {(now - last) // 3_600_000}h ago" if now - last < 172_800_000
+                    else f"last trade {(now - last) // 86_400_000}d ago")
+                badge, name, _ = nick(key, ws)
+                rows.append(f"{'🟢' if acct >= 1 else '⚪'} {badge} <b>{name}</b> · {usd(acct)} · {ago}")
+            except Exception as e:
+                rows.append(f"⚠️ {ws.get('label', key)}: couldn't read ({e!r})")
+        send("\n".join(["🩺 <b>BOT STATUS</b>", LINE, *rows, LINE,
+                         "✅ Watching every wallet every minute. Trades alert within 1–2 min; "
+                         "Jack's moves under $100k come as an hourly recap.", footer()]))
+        sys.exit(0)
     if "--preview" in sys.argv and "channel" in sys.argv:  # test + welcome post for the subscriber channel
         if not paid_chat():
             print("PAID_CHAT_ID secret is empty", file=sys.stderr)

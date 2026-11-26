@@ -3,7 +3,7 @@ on:
   workflow_dispatch:   # sends example alerts using live data; doesn't touch the tracker's state
     inputs:
       what:
-        description: "all = one of every alert type; weekly = just the weekly report; channel = test post to the subscriber channel"
+        description: "all = one of every alert type; weekly = just the weekly report; status = health card; channel = test post to the subscriber channel"
         default: all
 permissions:
   contents: read
