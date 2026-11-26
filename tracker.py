@@ -979,7 +979,7 @@ if __name__ == "__main__":
             tg("sendMessage", {"text": public(text), "parse_mode": "HTML"}, chat=paid_chat())
             send("✅ Midday briefing posted to the subscriber channel.")
         else:
-            send(text)
+            send(public(text))  # exactly what subscribers would see
         sys.exit(0)
     if "--preview" in sys.argv and "channel" in sys.argv:  # test + welcome post for the subscriber channel
         if not paid_chat():
