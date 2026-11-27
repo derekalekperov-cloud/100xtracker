@@ -14,7 +14,8 @@ plus a daily summary at 09:00 Madrid. Runs free on GitHub Actions (checks every 
 Test locally: `python tracker.py --dry-run` (prints instead of sending).
 Change the wallet with the `WALLET` env var.
 
-Also tracks 5 top traders from the Hyperliquid leaderboard (see `TOP_TRADERS` in `tracker.py`).
+Also tracks top traders from the Hyperliquid leaderboard (see `TOP_TRADERS` and `PRO_TRADERS` in `tracker.py`;
+add an address to `RETIRED` to stop tracking it).
 Their alerts are tagged ⭐ with the wallet's label and short address. Remove a line there to stop tracking one.
 
 Note: GitHub may delay scheduled runs by 5–15 min at busy times. Risk read is informational, not financial advice.
