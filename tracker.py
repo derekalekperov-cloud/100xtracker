@@ -29,15 +29,22 @@ TOP_TRADERS = {
     "0x9c16bc8f1104e4d2f72267eb981fa12de7cc4a6f": "Top 3 · SOL/BTC/ETH",
     "0xf899937184168b1d9dee75acbaa3fef0f52888db": "Top 4 · SOL/BTC/ETH short-seller",
     "0x15a4f009bb324a3fb9e36137136b201e3fe0dfdb": "Top 5 · big ETH/BTC whale",
+    # Funded with $6M by Top 5 on Nov 23; trades NVDA and other stock perps.
+    "0xf1b1a8c5f8ef0023875891c2f931acc8df28196e": "Top 5b · whale's new wallet",
 }
 # Long-history traders (consistent records over many months). Tagged 🏅.
 # "batch": very active wallets get one hourly digest instead of an alert per trade.
 PRO_TRADERS = {
     "0x885989fd94d30c150e6eaf897090509bce4f6aa8": ("Pro A", False),
-    "0x987163b6b482c30c2f5f3aa2760109668eb0091d": ("Pro B", False),
-    "0x2312171890250347dbf1b082bdf7950504909e92": ("Pro C", False),
     "0xf97ad6704baec104d00b88e0c157e2b7b3a1ddd1": ("Pro D · Loco (very active)", True),
     "0x8af700ba841f30e0a3fcb0ee4c4a9d223e1efa05": ("Pro E", False),
+    "0xd260b2216b735277da6771564a01c04856e78321": ("Pro F · Tom Riddle (active)", True),
+    "0x8f25818ff64be1abee91abca70c306b33b602062": ("Pro G · steady BTC", False),
+}
+# Wallets we stopped tracking (removed from state.json on the next run).
+RETIRED = {
+    "0x987163b6b482c30c2f5f3aa2760109668eb0091d",  # Pro B: no trades since early Nov, losing
+    "0x2312171890250347dbf1b082bdf7950504909e92",  # Pro C: very quiet, liquidation history
 }
 # Your own account: set the MY_WALLET repo secret to your public address. It is stored
 # in state.json under the key "me", so the address never appears in this public repo.
@@ -79,6 +86,8 @@ def wallets(state):
     """Upgrade old single-wallet state and make sure defaults are tracked."""
     now = int(time.time() * 1000)
     w = state.setdefault("wallets", {})
+    for addr in RETIRED:
+        w.pop(addr, None)
     for addr, label in DEFAULT_WALLETS.items():
         if addr not in w:
             w[addr] = {"label": label, "last_fill_ms": now, "last_ledger_ms": now, "peak": 0}
