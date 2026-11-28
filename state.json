@@ -8,7 +8,7 @@
       "peak": 14734572.39232,
       "emptied_alerted": false,
       "last_batch": 1795516449.0674531,
-      "_eq_checked": 1795844965.3351257
+      "_eq_checked": 1795848141.8753011
     },
     "0x89da4baec446f35a1cbe17a9d1ee5c70b05ee43f": {
       "label": "old wallet",
@@ -17,7 +17,7 @@
       "peak": 0.251396,
       "emptied_alerted": false,
       "last_batch": 1795516449.4705803,
-      "_eq_checked": 1795844966.2282383
+      "_eq_checked": 1795848142.2557237
     },
     "0x015354106478dda69c4aae3c0cf801290b738052": {
       "label": "\u2b50 Top 1 \u00b7 BTC/ZEC short-seller",
@@ -27,7 +27,7 @@
       "follow": false,
       "emptied_alerted": false,
       "last_batch": 1795516449.8419685,
-      "_eq_checked": 1795844967.012655
+      "_eq_checked": 1795848142.6264942
     },
     "0xfce053a5e461683454bf37ad66d20344c0e3f4c0": {
       "label": "\u2b50 Top 2 \u00b7 BTC trader",
@@ -37,7 +37,7 @@
       "follow": false,
       "emptied_alerted": false,
       "last_batch": 1795516450.1910706,
-      "_eq_checked": 1795845102.0535421
+      "_eq_checked": 1795847633.035354
     },
     "0x9c16bc8f1104e4d2f72267eb981fa12de7cc4a6f": {
       "label": "\u2b50 Top 3 \u00b7 SOL/BTC/ETH",
@@ -47,7 +47,7 @@
       "follow": false,
       "emptied_alerted": false,
       "last_batch": 1795516450.5981991,
-      "_eq_checked": 1795844968.177617
+      "_eq_checked": 1795848143.2478492
     },
     "0xf899937184168b1d9dee75acbaa3fef0f52888db": {
       "label": "\u2b50 Top 4 \u00b7 SOL/BTC/ETH short-seller",
@@ -57,7 +57,7 @@
       "follow": false,
       "emptied_alerted": false,
       "last_batch": 1795516450.9792168,
-      "_eq_checked": 1795844901.0871966
+      "_eq_checked": 1795848079.5845237
     },
     "0x15a4f009bb324a3fb9e36137136b201e3fe0dfdb": {
       "label": "\u2b50 Top 5 \u00b7 big ETH/BTC whale",
@@ -67,7 +67,7 @@
       "follow": false,
       "emptied_alerted": false,
       "last_batch": 1795516451.318747,
-      "_eq_checked": 1795845035.95567
+      "_eq_checked": 1795848207.734244
     },
     "0x885989fd94d30c150e6eaf897090509bce4f6aa8": {
       "label": "\ud83c\udfc5 Pro A",
@@ -78,7 +78,7 @@
       "batch": false,
       "emptied_alerted": false,
       "last_batch": 1795516451.6823134,
-      "_eq_checked": 1795845036.7735186
+      "_eq_checked": 1795848208.1212611
     },
     "0xf97ad6704baec104d00b88e0c157e2b7b3a1ddd1": {
       "label": "\ud83c\udfc5 Pro D \u00b7 Loco (very active)",
@@ -89,20 +89,20 @@
       "batch": true,
       "emptied_alerted": false,
       "last_batch": 1795514754.8439355,
-      "_eq_checked": 1795844769.87879,
+      "_eq_checked": 1795847952.843939,
       "pending_since": 1795802324.7527597,
       "pending": []
     },
     "0x8af700ba841f30e0a3fcb0ee4c4a9d223e1efa05": {
       "label": "\ud83c\udfc5 Pro E",
-      "last_fill_ms": 1795482572091,
+      "last_fill_ms": 1795846675452,
       "last_ledger_ms": 1795456648836,
       "peak": 29454501.277004,
       "follow": false,
       "batch": false,
       "emptied_alerted": false,
       "last_batch": 1795516452.9246094,
-      "_eq_checked": 1795845037.8163755
+      "_eq_checked": 1795848208.7221355
     },
     "me": {
       "label": "\ud83d\udc5b Mini Wallet",
@@ -110,7 +110,7 @@
       "last_ledger_ms": 1795610022678,
       "peak": 441.161376,
       "follow": false,
-      "_eq_checked": 1795845105.4329355,
+      "_eq_checked": 1795847635.1984277,
       "emptied_alerted": false,
       "last_batch": 1795516453.2638187
     },
@@ -120,7 +120,7 @@
       "last_ledger_ms": 1795815448451,
       "peak": 9806540.606092,
       "follow": false,
-      "_eq_checked": 1795845038.860626,
+      "_eq_checked": 1795848209.327989,
       "emptied_alerted": false
     },
     "0xd260b2216b735277da6771564a01c04856e78321": {
@@ -130,7 +130,7 @@
       "peak": 12479306.612693,
       "follow": false,
       "batch": true,
-      "_eq_checked": 1795845039.4841475,
+      "_eq_checked": 1795848209.9623237,
       "emptied_alerted": false
     },
     "0x8f25818ff64be1abee91abca70c306b33b602062": {
@@ -140,7 +140,7 @@
       "peak": 1131991.92106,
       "follow": false,
       "batch": false,
-      "_eq_checked": 1795845040.1032841,
+      "_eq_checked": 1795848210.452118,
       "emptied_alerted": false
     }
   },
